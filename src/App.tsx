@@ -2,7 +2,7 @@ import { FunctionComponent, useCallback, useMemo, useState } from 'react';
 import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { ContextMenu, ContextMenuDispatch, ContextMenuState } from './ContextMenu';
-import { TextNode } from './TextNode';
+import { CompilationNode, CompilationOutputNode, TextNode } from './Nodes';
 
 interface NodeData<T> {
     data: T
@@ -36,17 +36,17 @@ const initialNodes = [
     {
         data: { label: 'Node 1' },
         position: { x: 150, y: 0 },
-        type: 'text'
+        type: 'Text'
     },
     // {
     //     data: { label: 'Node 2' },
     //     position: { x: 0, y: 150 },
-    //     type: 'text'
+    //     type: 'Text'
     // },
     // {
     //     data: { label: 'Node 3' },
     //     position: { x: 300, y: 150 },
-    //     type: 'text'
+    //     type: 'Text'
     // }
 ].map(manager.tagNode) // Note: Typescript and partial application do not mix.
 
@@ -61,8 +61,10 @@ const initContextMenuState: ContextMenuState = {
     y: 0,
 }
 
-const nodesTypes = {
-    text: TextNode
+const nodesTypes = { // Sigh, it is not worth creating a circular dependency. I'll leave these here.
+    Text: TextNode,
+    CompilationNode: CompilationNode,
+    CompilationOutputNode: CompilationOutputNode
 }
 
 function App() {
@@ -80,6 +82,7 @@ function App() {
                     ev.preventDefault()
                     setContextMenuState({ is_visible: true, x: ev.pageX, y: ev.pageY })
                 }}
+                minZoom={1/100}
             />
             <ContextMenu {...contextMenuState} {...useMemo(createDispatch, [reactFlowInstance])} />
         </div>
@@ -89,9 +92,9 @@ function App() {
         let custom_id = 0;
         return {
             close: () => { setContextMenuState(x => { return { ...x, is_visible: false }; }); },
-            addTextNode: (position: XYPosition) => {
+            addNode: (position: XYPosition, type) => {
                 const label = `Custom ${++custom_id}`;
-                reactFlowInstance.addNodes(manager.tagNode({ data: { label }, position: reactFlowInstance.project(position), type: 'text' }))
+                reactFlowInstance.addNodes(manager.tagNode({ data: { label }, position: reactFlowInstance.project(position), type }))
             }
         };
     }

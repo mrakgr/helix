@@ -9,7 +9,7 @@ export interface ContextMenuState {
 
 export interface ContextMenuDispatch {
     close: () => void;
-    addTextNode: (position: XYPosition) => void;
+    addNode: (position: XYPosition, type: string) => void;
 }
 
 const useFocus = <T extends HTMLElement>(): [MutableRefObject<T | null>, () => void] => {
@@ -37,17 +37,23 @@ function useCloseOnClickedOutside(ref: MutableRefObject<HTMLElement | null>, clo
 export function ContextMenu(q: ContextMenuState & ContextMenuDispatch) {
     const ref: MutableRefObject<HTMLUListElement | null> = useRef(null);
     useCloseOnClickedOutside(ref, q.close);
+    const onClick = (type: string) => (ev: React.MouseEvent) => {
+        q.addNode({ x: ev.pageX, y: ev.pageY }, type)
+        q.close()
+    }
     return q.is_visible ? (
         <ul className="menu menu-compact bg-base-300 w-56 absolute"
             ref={ref}
             style={{ left: q.x, top: q.y }}
         >
-            <li><a onClick={onClick}>Add Node</a></li>
+            <li className="menu-title">
+                <span>Add Node</span>
+            </li>
+            {
+            [
+            "Text", "CompilationNode", "CompilationOutputNode"
+            ].map(type => <li key={type}><a onClick={onClick(type)}>{type}</a></li>)
+            }
         </ul>
     ) : <></>;
-
-    function onClick(ev : React.MouseEvent) {
-        q.addTextNode({ x: ev.pageX, y: ev.pageY })
-        q.close()
-    }
 }

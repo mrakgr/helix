@@ -1,39 +1,59 @@
-import {MutableRefObject, useCallback, useEffect, useRef, useState} from 'react';
-import ReactFlow, {addEdge, useEdgesState, useNodesState} from 'reactflow';
+import { FunctionComponent, useCallback, useMemo, useState } from 'react';
+import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { ContextMenu, ContextMenuDispatch, ContextMenuState } from './ContextMenu';
+import { TextNode } from './TextNode';
+
+interface NodeData<T> {
+    data: T
+    position: XYPosition
+    type?: string
+}
+
+class NodeManager {
+    id = 0
+
+    // in the future we'll extend these so it supports multiple handles.
+    tagNode = <T,>(data: NodeData<T>): Node<T> => {
+        return {
+            ...data,
+            id: `${++this.id}`
+        }
+    }
+}
+
+function connectNodes(n1: Node, n2: Node): Edge {
+    return {
+        id: `e${n1.id}-${n2.id}`,
+        source: n1.id,
+        target: n2.id
+    }
+}
+
+const manager = new NodeManager()
 
 const initialNodes = [
     {
-        id: '1',
-        data: {label: 'Node 1'},
-        position: {x: 150, y: 0},
+        data: { label: 'Node 1' },
+        position: { x: 150, y: 0 },
+        type: 'text'
     },
-    {
-        id: '2',
-        data: {label: 'Node 2'},
-        position: {x: 0, y: 150},
-    },
-    {
-        id: '3',
-        data: {label: 'Node 3'},
-        position: {x: 300, y: 150},
-    },
-];
+    // {
+    //     data: { label: 'Node 2' },
+    //     position: { x: 0, y: 150 },
+    //     type: 'text'
+    // },
+    // {
+    //     data: { label: 'Node 3' },
+    //     position: { x: 300, y: 150 },
+    //     type: 'text'
+    // }
+].map(manager.tagNode) // Note: Typescript and partial application do not mix.
 
-const initialEdges = [
-    {id: 'e1-2', source: '1', target: '2'},
-    {id: 'e1-3', source: '1', target: '3'},
-];
-
-interface ContextMenuState {
-    is_visible: boolean
-    x: number
-    y: number
-}
-
-interface ContextMenuDispatch {
-    close: () => void
-}
+const initialEdges: Edge[] = [
+    // connectNodes(initialNodes[0], initialNodes[1]),
+    // connectNodes(initialNodes[0], initialNodes[2])
+]
 
 const initContextMenuState: ContextMenuState = {
     is_visible: false,
@@ -41,67 +61,40 @@ const initContextMenuState: ContextMenuState = {
     y: 0,
 }
 
-function closeOnClickedOutside(ref : MutableRefObject<HTMLElement | null>, close : () => void) {
-    useEffect(() => {
-        const listener = (ev : MouseEvent) => {
-            const el = ref.current
-            if (el && !(ev.target instanceof Node && el.contains(ev.target))) {
-                close()
-            }
-        }
-        document.addEventListener('click',listener)
-        return () => {
-            document.removeEventListener('click',listener)
-        }
-    }, [ref, close])
+const nodesTypes = {
+    text: TextNode
 }
 
-function ContextMenu(q: ContextMenuState & ContextMenuDispatch) {
-    const ref : MutableRefObject<HTMLDivElement | null> = useRef(null)
-    closeOnClickedOutside(ref, q.close) 
-    if (q.is_visible) {
-        return (
-            <div 
-                ref={ref}
-                style={{left: q.x, top: q.y, backgroundColor: 'red', position: 'absolute', width: '300px', height: '300px'}}>
-                This is the context menu.
-                1...
-                2...
-                3...
-            </div>
-        )
-    } else {
-        return <></>
+function App() {
+    const reactFlowInstance = useReactFlow()
+
+    const [contextMenuState, setContextMenuState] = useState(initContextMenuState)
+
+    return (
+        <div style={{ width: 'inherit', height: 'inherit', position: 'relative' }}>
+            <ReactFlow
+                defaultNodes={initialNodes}
+                defaultEdges={initialEdges}
+                nodeTypes={nodesTypes}
+                onContextMenu={ev => {
+                    ev.preventDefault()
+                    setContextMenuState({ is_visible: true, x: ev.pageX, y: ev.pageY })
+                }}
+            />
+            <ContextMenu {...contextMenuState} {...useMemo(createDispatch, [reactFlowInstance])} />
+        </div>
+    );
+
+    function createDispatch(): ContextMenuDispatch {
+        let custom_id = 0;
+        return {
+            close: () => { setContextMenuState(x => { return { ...x, is_visible: false }; }); },
+            addTextNode: (position: XYPosition) => {
+                const label = `Custom ${++custom_id}`;
+                reactFlowInstance.addNodes(manager.tagNode({ data: { label }, position: reactFlowInstance.project(position), type: 'text' }))
+            }
+        };
     }
 }
 
-function Flow() {
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-    const [contextMenuState, setContextMenuState] = useState(initContextMenuState)
-
-    const onConnect = useCallback(
-        (connection: any) => setEdges((eds) => addEdge(connection, eds)),
-        [setEdges]
-    );
-    
-    function close() { setContextMenuState(x => { return { ...x, is_visible: false } }) }
-    return (
-        <div style={{width: 'inherit', height: 'inherit', position: 'relative'}}>
-            <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onContextMenu={ev => {
-                    ev.preventDefault()
-                    setContextMenuState({is_visible: true, x: ev.pageX, y: ev.pageY})
-                }}
-            />
-            <ContextMenu {...contextMenuState } close={close} />
-        </div>
-    );
-}
-
-export default Flow;
+export default App;

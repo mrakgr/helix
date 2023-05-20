@@ -1,5 +1,5 @@
 import { ComponentType } from 'react';
-import { Handle, NodeProps, Position, XYPosition } from 'reactflow';
+import { Handle, NodeProps, Position, XYPosition, Node } from 'reactflow';
 
 
 // It is time to decide on the architectural direction for this application.
@@ -16,27 +16,28 @@ import { Handle, NodeProps, Position, XYPosition } from 'reactflow';
 // I got it all wrong here.
 // I completely didn't understand function contravariance in Typescript.
 
-interface TextNodeData {
-    data: {
-        // content: string;
-        // onContentChange: (x: string) => void;
-    };
-    type: string
+export interface TextNodeData {
 }
 
 interface CompilationNodeData {
-    data: Record<string, never>
 }
 
 interface CompilationOutputNodeData {
-    data: Record<string, never>
 }
 
-export type NodeTypes = {
-    Text: (props: TextNodeData) => JSX.Element
-    Compilation: (props: CompilationNodeData) => JSX.Element
-    CompilationOutput: (props: CompilationOutputNodeData) => JSX.Element
+type NodeTypeToData = {
+    Text: TextNodeData
+    Compilation: CompilationNodeData
+    CompilationOutput: CompilationOutputNodeData
 }
+
+export type HelixNodeTypeDefinitions = {
+    [T in keyof NodeTypeToData]: (props: NodeTypeToData[T]) => JSX.Element
+}
+
+export type HelixNode = {
+    [T in keyof NodeTypeToData]: Node<NodeTypeToData[T],T>
+}[keyof NodeTypeToData]
 
 export function TextNode({ data }: TextNodeData) {
     // We'll add more target handles later.
@@ -44,8 +45,8 @@ export function TextNode({ data }: TextNodeData) {
         <div className="grid w-96 h-96 p-8 card bg-base-300 rounded-box place-items-center">
             <textarea className="textarea w-full h-full textarea-bordered resize-none nodrag"
                 placeholder="Text"
-                value={data.content}
-                onChange={x => { data.onContentChange(x.target.value); }}
+                // value={data.content}
+                // onChange={x => { data.onContentChange(x.target.value); }}
             ></textarea>
             <Handle type="target"
                 position={Position.Top}

@@ -2,19 +2,13 @@ import { FunctionComponent, useCallback, useMemo, useState } from 'react';
 import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { ContextMenu, ContextMenuDispatch, ContextMenuState } from './ContextMenu';
-import { CompilationNode, CompilationOutputNode, NodeTypes, TextNode } from './Nodes';
-
-interface NodeData<T> {
-    data: T
-    position: XYPosition
-    type?: string
-}
+import { CompilationNode, CompilationOutputNode, HelixNode, HelixNodeTypeDefinitions, TextNode, TextNodeData } from './Nodes';
 
 class NodeManager { // TODO: We'll get rid of this.
     id = 0
 
     // in the future we'll extend these so it supports multiple handles.
-    tagNode = <T,>(data: NodeData<T>): Node<T> => {
+    tagNode = <T, K extends string | undefined>(data: Omit<Node<T, K>, 'id'>): Node<T, K> => {
         return {
             ...data,
             id: `${++this.id}`
@@ -32,13 +26,15 @@ function connectNodes(n1: Node, n2: Node): Edge {
 
 const manager = new NodeManager()
 
-const initialNodes = [
-    {
-        data: { label: 'Node 1' }, // TODO: This is wrong, but there is no type error.
-        position: { x: 150, y: 0 },
-        type: 'Text'
-    }
-].map(manager.tagNode) // Note: Typescript and partial application do not mix.
+const initialNodes: HelixNode[] = 
+    [
+        {
+            data: {},
+            position: { x: 150, y: 0 },
+            type: 'Text'
+        }
+    ].map(manager.tagNode)
+
 
 const initialEdges: Edge[] = [
     // connectNodes(initialNodes[0], initialNodes[1]),
@@ -51,15 +47,11 @@ const initContextMenuState: ContextMenuState = {
     y: 0,
 }
 
-const nodesTypes: NodeTypes = { // Sigh, it is not worth creating a circular dependency. I'll leave these here.
+const nodesTypes: HelixNodeTypeDefinitions = {
     Text: TextNode,
     CompilationOutput: CompilationOutputNode,
     Compilation: CompilationNode,
 }
-
-// interface IApp {
-
-// }
 
 function App() {
     const reactFlowInstance = useReactFlow()
@@ -76,7 +68,7 @@ function App() {
                     ev.preventDefault()
                     setContextMenuState({ is_visible: true, x: ev.pageX, y: ev.pageY })
                 }}
-                minZoom={1/100}
+                minZoom={1 / 100}
             />
             <ContextMenu {...contextMenuState} {...useMemo(createDispatch, [reactFlowInstance])} />
         </div>

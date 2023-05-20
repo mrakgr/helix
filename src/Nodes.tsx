@@ -1,11 +1,6 @@
-import { Handle, Position } from 'reactflow';
+import { ComponentType } from 'react';
+import { Handle, NodeProps, Position, XYPosition } from 'reactflow';
 
-interface TextNodeData {
-    data: {
-        content: string;
-        onContentChange: (x: string) => void;
-    };
-}
 
 // It is time to decide on the architectural direction for this application.
 // I am not sure whether I want to pass in closures through the data field in order to signal the content changes.
@@ -15,33 +10,33 @@ interface TextNodeData {
 
 // React Flow uses Zustand under the hood, so I am leaning towards that as well.
 
-interface TextNodeT {
-    type: "Text"
-    data: TextNodeData
+
+// ...
+
+// I got it all wrong here.
+// I completely didn't understand function contravariance in Typescript.
+
+interface TextNodeData {
+    data: {
+        // content: string;
+        // onContentChange: (x: string) => void;
+    };
+    type: string
 }
 
 interface CompilationNodeData {
     data: Record<string, never>
 }
 
-interface CompilationNodeT {
-    type: "Compilation"
-    data: CompilationNodeData
-}
-
 interface CompilationOutputNodeData {
     data: Record<string, never>
 }
 
-interface CompilationOutputNodeT {
-    type: "CompilationOutput"
-    data: CompilationOutputNodeData
+export type NodeTypes = {
+    Text: (props: TextNodeData) => JSX.Element
+    Compilation: (props: CompilationNodeData) => JSX.Element
+    CompilationOutput: (props: CompilationOutputNodeData) => JSX.Element
 }
-
-type Nodes =
-    | TextNodeT
-    | CompilationNodeT
-    | CompilationOutputNodeT
 
 export function TextNode({ data }: TextNodeData) {
     // We'll add more target handles later.
@@ -76,7 +71,7 @@ export function CompilationNode({ data }: CompilationNodeData) {
     );
 }
 
-export function CompilationOutputNode() {
+export function CompilationOutputNode({ data }: CompilationOutputNodeData) {
     const ar: JSX.Element[] = []
     for (let i = 0; i < 30; i++) {
         ar.push(<p key={i}>If a dog chews shoes whose shoes does he choose?</p>)

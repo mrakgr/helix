@@ -2,7 +2,7 @@ import { FunctionComponent, useCallback, useMemo, useState } from 'react';
 import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { ContextMenu, ContextMenuDispatch, ContextMenuState } from './ContextMenu';
-import { CompilationNode, CompilationOutputNode, TextNode } from './Nodes';
+import { CompilationNode, CompilationOutputNode, NodeTypes, TextNode } from './Nodes';
 
 interface NodeData<T> {
     data: T
@@ -36,7 +36,7 @@ const initialNodes = [
     {
         data: { label: 'Node 1' }, // TODO: This is wrong, but there is no type error.
         position: { x: 150, y: 0 },
-        type: 'TextNode'
+        type: 'Text'
     }
 ].map(manager.tagNode) // Note: Typescript and partial application do not mix.
 
@@ -51,22 +51,15 @@ const initContextMenuState: ContextMenuState = {
     y: 0,
 }
 
-const nodesTypes = { // Sigh, it is not worth creating a circular dependency. I'll leave these here.
-    TextNode: TextNode,
-    CompilationNode: CompilationNode,
-    CompilationOutputNode: CompilationOutputNode
+const nodesTypes: NodeTypes = { // Sigh, it is not worth creating a circular dependency. I'll leave these here.
+    Text: TextNode,
+    CompilationOutput: CompilationOutputNode,
+    Compilation: CompilationNode,
 }
 
-// This is the second time I am doing this.
-// Last time it turned into a mess and I got stuck on design issues.
+// interface IApp {
 
-// The way to deal it is to take a step back and define the application interface.
-
-
-
-interface IApp {
-
-}
+// }
 
 function App() {
     const reactFlowInstance = useReactFlow()

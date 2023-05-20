@@ -7,9 +7,14 @@ export interface ContextMenuState {
     y: number;
 }
 
+interface ContextNode {
+    contextMenuName: string
+    onAdd: (position: XYPosition) => void
+}
+
 export interface ContextMenuDispatch {
     close: () => void;
-    addNode: (position: XYPosition, type: string) => void;
+    contextNodes: ContextNode[]
 }
 
 const useFocus = <T extends HTMLElement>(): [MutableRefObject<T | null>, () => void] => {
@@ -37,8 +42,9 @@ function useCloseOnClickedOutside(ref: MutableRefObject<HTMLElement | null>, clo
 export function ContextMenu(q: ContextMenuState & ContextMenuDispatch) {
     const ref: MutableRefObject<HTMLUListElement | null> = useRef(null);
     useCloseOnClickedOutside(ref, q.close);
-    const onClick = (type: string) => (ev: React.MouseEvent) => {
-        q.addNode({ x: ev.pageX, y: ev.pageY }, type)
+    const onClick = (onAdd: (pos: XYPosition) => void) => (ev: React.MouseEvent) => {
+        // TODO: Based on the drag & drop example, the coordinate projection isn't actually correct. We'll have to redo it.
+        onAdd({ x: ev.pageX, y: ev.pageY })
         q.close()
     }
     return q.is_visible ? (
@@ -50,9 +56,9 @@ export function ContextMenu(q: ContextMenuState & ContextMenuDispatch) {
                 <span>Add Node</span>
             </li>
             {
-            [
-            "Text", "CompilationNode", "CompilationOutputNode"
-            ].map(type => <li key={type}><a onClick={onClick(type)}>{type}</a></li>)
+                q.contextNodes.map((x, i) =>
+                    <li key={i}><a onClick={onClick(x.onAdd)}>{x.contextMenuName}</a></li>
+                )
             }
         </ul>
     ) : <></>;

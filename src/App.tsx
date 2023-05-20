@@ -2,7 +2,7 @@ import { FunctionComponent, useCallback, useMemo, useState } from 'react';
 import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { ContextMenu, ContextMenuDispatch, ContextMenuState } from './ContextMenu';
-import { CompilationNode, CompilationOutputNode, TextNode } from './Nodes';
+import { CompilationNode, CompilationNodeData, CompilationOutputNode, TextNode, TextNodeData } from './Nodes';
 
 interface NodeData<T> {
     data: T
@@ -34,20 +34,10 @@ const manager = new NodeManager()
 
 const initialNodes = [
     {
-        data: { label: 'Node 1' },
+        data: {},
         position: { x: 150, y: 0 },
-        type: 'Text'
+        type: 'TextNode'
     },
-    // {
-    //     data: { label: 'Node 2' },
-    //     position: { x: 0, y: 150 },
-    //     type: 'Text'
-    // },
-    // {
-    //     data: { label: 'Node 3' },
-    //     position: { x: 300, y: 150 },
-    //     type: 'Text'
-    // }
 ].map(manager.tagNode) // Note: Typescript and partial application do not mix.
 
 const initialEdges: Edge[] = [
@@ -62,7 +52,7 @@ const initContextMenuState: ContextMenuState = {
 }
 
 const nodesTypes = { // Sigh, it is not worth creating a circular dependency. I'll leave these here.
-    Text: TextNode,
+    TextNode: TextNode,
     CompilationNode: CompilationNode,
     CompilationOutputNode: CompilationOutputNode
 }
@@ -82,21 +72,40 @@ function App() {
                     ev.preventDefault()
                     setContextMenuState({ is_visible: true, x: ev.pageX, y: ev.pageY })
                 }}
-                minZoom={1/100}
+                minZoom={1 / 100}
             />
             <ContextMenu {...contextMenuState} {...useMemo(createDispatch, [reactFlowInstance])} />
         </div>
     );
 
     function createDispatch(): ContextMenuDispatch {
-        let custom_id = 0;
         return {
             close: () => { setContextMenuState(x => { return { ...x, is_visible: false }; }); },
-            addNode: (position: XYPosition, type) => {
-                const label = `Custom ${++custom_id}`;
-                reactFlowInstance.addNodes(manager.tagNode({ data: { label }, position: reactFlowInstance.project(position), type }))
-            }
+            contextNodes: [
+                {
+                    contextMenuName: "Text",
+                    onAdd: (position) => {
+                        const data: TextNodeData = { 
+                            data: {} 
+                            }
+                        addNode(data, "TextNode", position);
+                    }
+                },
+                {
+                    contextMenuName: "Compilation",
+                    onAdd: (position) => {
+                        const data: CompilationNodeData = { 
+                            data: { onCompile: () => { return } } 
+                            }
+                        addNode(data, "CompilationNode", position);
+                    }
+                }
+            ]
         };
+
+        function addNode<T>(data: T, type: string, position: XYPosition) {
+            reactFlowInstance.addNodes(manager.tagNode({ data, position: reactFlowInstance.project(position), type }));
+        }
     }
 }
 

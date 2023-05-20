@@ -1,9 +1,9 @@
 import { Handle, Position } from 'reactflow';
 
-interface TextNodeData {
+export interface TextNodeData {
     data: {
-        content: string;
-        onContentChange: (x: string) => void;
+        // content: string;
+        // onContentChange: (x: string) => void;
     };
 }
 export function TextNode({ data }: TextNodeData) {
@@ -12,8 +12,8 @@ export function TextNode({ data }: TextNodeData) {
         <div className="grid w-96 h-96 p-8 card bg-base-300 rounded-box place-items-center">
             <textarea className="textarea w-full h-full textarea-bordered resize-none nodrag"
                 placeholder="Text"
-                value={data.content}
-                onChange={x => { data.onContentChange(x.target.value); }}
+                // value={data.content} // I am so confused. Just when did these get lost? Damn the loose typing of JS.
+                // onChange={x => { data.onContentChange(x.target.value); }}
             ></textarea>
             <Handle type="target"
                 position={Position.Top}
@@ -27,16 +27,20 @@ export function TextNode({ data }: TextNodeData) {
     );
 }
 
-interface CompilationNodeOutputData {
+export interface CompilationNodeData {
     data: {
-        result: JSX.Element
+        onCompile: () => void
     }
 }
 
-export function CompilationNode() {
+export function CompilationNode({ data }: CompilationNodeData) {
     return (
         <div className="grid w-fit h-fit p-8 card bg-base-300 rounded-box place-items-center">
-            <button className="btn btn-lg">Compile</button>
+            <button className="btn btn-lg"
+                onClick={data.onCompile}
+            >
+                Compile
+            </button>
             <Handle type="target"
                 position={Position.Top}
                 className="w-8 h-8 rounded-none bg-red-500"
@@ -45,8 +49,14 @@ export function CompilationNode() {
     );
 }
 
+export interface CompilationNodeOutputData {
+    data: {
+        // result: JSX.Element
+    }
+}
+
 export function CompilationOutputNode() {
-    const ar : JSX.Element[] = []
+    const ar: JSX.Element[] = []
     for (let i = 0; i < 30; i++) {
         ar.push(<p key={i}>If a dog chews shoes whose shoes does he choose?</p>)
     }

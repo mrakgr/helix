@@ -1,14 +1,19 @@
 import { Handle, Position } from 'reactflow';
 
-// The data is broken here, and I haven't even realized it.
-// The library is so type loose it is ridiculous.
-
 interface TextNodeData {
     data: {
         content: string;
         onContentChange: (x: string) => void;
     };
 }
+
+// It is time to decide on the architectural direction for this application.
+// I am not sure whether I want to pass in closures through the data field in order to signal the content changes.
+
+// With Fable, we had the Elmish library and could send messages to the update loop.
+// The equivalent of that would be to use reducers.
+
+// React Flow uses Zustand under the hood, so I am leaning towards that as well.
 
 interface TextNodeT {
     type: "Text"
@@ -33,9 +38,9 @@ interface CompilationOutputNodeT {
     data: CompilationOutputNodeData
 }
 
-type Nodes = 
-    | TextNodeT 
-    | CompilationNodeT 
+type Nodes =
+    | TextNodeT
+    | CompilationNodeT
     | CompilationOutputNodeT
 
 export function TextNode({ data }: TextNodeData) {

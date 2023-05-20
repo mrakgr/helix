@@ -1,11 +1,43 @@
 import { Handle, Position } from 'reactflow';
 
+// The data is broken here, and I haven't even realized it.
+// The library is so type loose it is ridiculous.
+
 interface TextNodeData {
     data: {
         content: string;
         onContentChange: (x: string) => void;
     };
 }
+
+interface TextNodeT {
+    type: "Text"
+    data: TextNodeData
+}
+
+interface CompilationNodeData {
+    data: Record<string, never>
+}
+
+interface CompilationNodeT {
+    type: "Compilation"
+    data: CompilationNodeData
+}
+
+interface CompilationOutputNodeData {
+    data: Record<string, never>
+}
+
+interface CompilationOutputNodeT {
+    type: "CompilationOutput"
+    data: CompilationOutputNodeData
+}
+
+type Nodes = 
+    | TextNodeT 
+    | CompilationNodeT 
+    | CompilationOutputNodeT
+
 export function TextNode({ data }: TextNodeData) {
     // We'll add more target handles later.
     return (
@@ -27,13 +59,7 @@ export function TextNode({ data }: TextNodeData) {
     );
 }
 
-interface CompilationNodeOutputData {
-    data: {
-        result: JSX.Element
-    }
-}
-
-export function CompilationNode() {
+export function CompilationNode({ data }: CompilationNodeData) {
     return (
         <div className="grid w-fit h-fit p-8 card bg-base-300 rounded-box place-items-center">
             <button className="btn btn-lg">Compile</button>
@@ -46,7 +72,7 @@ export function CompilationNode() {
 }
 
 export function CompilationOutputNode() {
-    const ar : JSX.Element[] = []
+    const ar: JSX.Element[] = []
     for (let i = 0; i < 30; i++) {
         ar.push(<p key={i}>If a dog chews shoes whose shoes does he choose?</p>)
     }

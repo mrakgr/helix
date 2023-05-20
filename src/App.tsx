@@ -10,7 +10,7 @@ interface NodeData<T> {
     type?: string
 }
 
-class NodeManager {
+class NodeManager { // TODO: We'll get rid of this.
     id = 0
 
     // in the future we'll extend these so it supports multiple handles.
@@ -34,20 +34,10 @@ const manager = new NodeManager()
 
 const initialNodes = [
     {
-        data: { label: 'Node 1' },
+        data: { label: 'Node 1' }, // TODO: This is wrong, but there is no type error.
         position: { x: 150, y: 0 },
-        type: 'Text'
-    },
-    // {
-    //     data: { label: 'Node 2' },
-    //     position: { x: 0, y: 150 },
-    //     type: 'Text'
-    // },
-    // {
-    //     data: { label: 'Node 3' },
-    //     position: { x: 300, y: 150 },
-    //     type: 'Text'
-    // }
+        type: 'TextNode'
+    }
 ].map(manager.tagNode) // Note: Typescript and partial application do not mix.
 
 const initialEdges: Edge[] = [
@@ -62,9 +52,20 @@ const initContextMenuState: ContextMenuState = {
 }
 
 const nodesTypes = { // Sigh, it is not worth creating a circular dependency. I'll leave these here.
-    Text: TextNode,
+    TextNode: TextNode,
     CompilationNode: CompilationNode,
     CompilationOutputNode: CompilationOutputNode
+}
+
+// This is the second time I am doing this.
+// Last time it turned into a mess and I got stuck on design issues.
+
+// The way to deal it is to take a step back and define the application interface.
+
+
+
+interface IApp {
+
 }
 
 function App() {

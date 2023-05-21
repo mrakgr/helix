@@ -1,28 +1,14 @@
-import { ComponentType } from 'react';
-import { Handle, NodeProps, Position, XYPosition, Node } from 'reactflow';
+/* eslint-disable @typescript-eslint/no-empty-interface */
+import { Handle, NodeProps, Position, Node } from 'reactflow';
 
-
-// It is time to decide on the architectural direction for this application.
-// I am not sure whether I want to pass in closures through the data field in order to signal the content changes.
-
-// With Fable, we had the Elmish library and could send messages to the update loop.
-// The equivalent of that would be to use reducers.
-
-// React Flow uses Zustand under the hood, so I am leaning towards that as well.
-
-
-// ...
-
-// I got it all wrong here.
-// I completely didn't understand function contravariance in Typescript.
 
 export interface TextNodeData {
 }
 
-interface CompilationNodeData {
+export interface CompilationNodeData {
 }
 
-interface CompilationOutputNodeData {
+export interface CompilationOutputNodeData {
 }
 
 type NodeTypeToData = {
@@ -31,15 +17,17 @@ type NodeTypeToData = {
     CompilationOutput: CompilationOutputNodeData
 }
 
+export type NodeKeys = keyof NodeTypeToData
+
 export type HelixNodeTypeDefinitions = {
-    [T in keyof NodeTypeToData]: (props: NodeTypeToData[T]) => JSX.Element
+    [T in NodeKeys]: (props: NodeProps<NodeTypeToData[T]>) => JSX.Element
 }
 
 export type HelixNode = {
-    [T in keyof NodeTypeToData]: Node<NodeTypeToData[T],T>
+    [T in NodeKeys]: Node<NodeTypeToData[T],T>
 }[keyof NodeTypeToData]
 
-export function TextNode({ data }: TextNodeData) {
+export function TextNode({ data }: NodeProps<TextNodeData>) {
     // We'll add more target handles later.
     return (
         <div className="grid w-96 h-96 p-8 card bg-base-300 rounded-box place-items-center">
@@ -60,7 +48,7 @@ export function TextNode({ data }: TextNodeData) {
     );
 }
 
-export function CompilationNode({ data }: CompilationNodeData) {
+export function CompilationNode({ data }: NodeProps<CompilationNodeData>) {
     return (
         <div className="grid w-fit h-fit p-8 card bg-base-300 rounded-box place-items-center">
             <button className="btn btn-lg">Compile</button>
@@ -72,7 +60,7 @@ export function CompilationNode({ data }: CompilationNodeData) {
     );
 }
 
-export function CompilationOutputNode({ data }: CompilationOutputNodeData) {
+export function CompilationOutputNode({ data }: NodeProps<CompilationOutputNodeData>) {
     const ar: JSX.Element[] = []
     for (let i = 0; i < 30; i++) {
         ar.push(<p key={i}>If a dog chews shoes whose shoes does he choose?</p>)

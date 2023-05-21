@@ -1,45 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { FunctionComponent, useCallback, useMemo, useState } from 'react';
-import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow } from 'reactflow';
+import ReactFlow, { addEdge, useEdgesState, useNodesState, Node, Edge, XYPosition, Connection, NodeProps, useReactFlow, ReactFlowInstance } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { ContextMenu, ContextMenuDispatch, ContextMenuState } from './ContextMenu';
 import { CompilationNode, CompilationOutputNode, HelixNode, HelixNodeTypeDefinitions, TextNode, TextNodeData } from './Nodes';
-
-class NodeManager { // TODO: We'll get rid of this.
-    id = 0
-
-    // in the future we'll extend these so it supports multiple handles.
-    tagNode = <T, K extends string | undefined>(data: Omit<Node<T, K>, 'id'>): Node<T, K> => {
-        return {
-            ...data,
-            id: `${++this.id}`
-        }
-    }
-}
-
-function connectNodes(n1: Node, n2: Node): Edge {
-    return {
-        id: `e${n1.id}-${n2.id}`,
-        source: n1.id,
-        target: n2.id
-    }
-}
-
-const manager = new NodeManager()
-
-const initialNodes: HelixNode[] = 
-    [
-        {
-            data: {},
-            position: { x: 150, y: 0 },
-            type: 'Text'
-        }
-    ].map(manager.tagNode)
-
-
-const initialEdges: Edge[] = [
-    // connectNodes(initialNodes[0], initialNodes[1]),
-    // connectNodes(initialNodes[0], initialNodes[2])
-]
+import { initialEdges, initialNodes, manager } from './NodeManager';
 
 const initContextMenuState: ContextMenuState = {
     is_visible: false,
@@ -51,6 +16,10 @@ const nodesTypes: HelixNodeTypeDefinitions = {
     Text: TextNode,
     CompilationOutput: CompilationOutputNode,
     Compilation: CompilationNode,
+}
+
+function assertNever(x: never): never {
+  throw new Error("Unexpected object: " + x);
 }
 
 function App() {
@@ -75,12 +44,25 @@ function App() {
     );
 
     function createDispatch(): ContextMenuDispatch {
-        let custom_id = 0;
         return {
             close: () => { setContextMenuState(x => { return { ...x, is_visible: false }; }); },
-            addNode: (position: XYPosition, type) => {
-                const label = `Custom ${++custom_id}`;
-                reactFlowInstance.addNodes(manager.tagNode({ data: { label }, position: reactFlowInstance.project(position), type }))
+            addNode: (position, type) => {
+                position = reactFlowInstance.project(position) // TODO: This is not how the drag and drop example does it.
+                let n: HelixNode
+                switch (type) {
+                    case 'Text':
+                        n = manager.createText({}, position)
+                        break;
+                    case 'Compilation':
+                        n = manager.createCompilation({}, position)
+                        break;
+                    case 'CompilationOutput':
+                        n = manager.createCompilationOutput({}, position)
+                        break;
+                    default:
+                        assertNever(type)
+                }
+                reactFlowInstance.addNodes(n)
             }
         };
     }

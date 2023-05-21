@@ -1,5 +1,6 @@
 import { MutableRefObject, useEffect, useRef } from 'react';
 import { XYPosition } from 'reactflow';
+import { NodeKeys } from './Nodes';
 
 export interface ContextMenuState {
     is_visible: boolean;
@@ -9,7 +10,7 @@ export interface ContextMenuState {
 
 export interface ContextMenuDispatch {
     close: () => void;
-    addNode: (position: XYPosition, type: string) => void;
+    addNode: (position: XYPosition, type: NodeKeys) => void;
 }
 
 const useFocus = <T extends HTMLElement>(): [MutableRefObject<T | null>, () => void] => {
@@ -37,10 +38,11 @@ function useCloseOnClickedOutside(ref: MutableRefObject<HTMLElement | null>, clo
 export function ContextMenu(q: ContextMenuState & ContextMenuDispatch) {
     const ref: MutableRefObject<HTMLUListElement | null> = useRef(null);
     useCloseOnClickedOutside(ref, q.close);
-    const onClick = (type: string) => (ev: React.MouseEvent) => {
+    const onClick = (type: NodeKeys) => (ev: React.MouseEvent) => {
         q.addNode({ x: ev.pageX, y: ev.pageY }, type)
         q.close()
     }
+    const item = (type: NodeKeys) => <li key={type}><a onClick={onClick(type)}>{type}</a></li>
     return q.is_visible ? (
         <ul className="menu menu-compact bg-base-300 w-56 absolute"
             ref={ref}
@@ -49,11 +51,7 @@ export function ContextMenu(q: ContextMenuState & ContextMenuDispatch) {
             <li className="menu-title">
                 <span>Add Node</span>
             </li>
-            {
-            [
-            "Text", "CompilationNode", "CompilationOutputNode"
-            ].map(type => <li key={type}><a onClick={onClick(type)}>{type}</a></li>)
-            }
+            {[item("Text"), item("Compilation")]}
         </ul>
     ) : <></>;
 }

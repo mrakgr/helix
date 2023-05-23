@@ -259,16 +259,14 @@ let diagramTrialPage model dispatch =
 
 let view model dispatch =
     comp<MudMenu> {
-        // "PositionAtCursor" => true
-        // "ActivationEvent" => MouseEvent.RightClick
+        "PositionAtCursor" => true
+        "ActivationEvent" => MouseEvent.RightClick
         attr.fragment "ActivatorContent" (comp<MudButton> {
-            on.click (fun e -> printfn "Hello Clicked")
             "Hello"
         })
-        attr.fragment "ChildContent" (div {
-            comp<MudMenuItem> { div {"Text"} }
-            comp<MudMenuItem> { div {"Compilation"} }
-        })
+        attr.fragment "ChildContent" (
+            comp<MudMenuItem> { "Text" }
+        )
     }
     // Main()
     //     .Menu(concat {

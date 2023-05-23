@@ -4,6 +4,7 @@ open Bolero
 open Bolero.Html
 open Bolero.Server.Html
 open HelloWorld
+open MudBlazor
 
 let page = doctypeHtml {
     head {
@@ -16,6 +17,8 @@ let page = doctypeHtml {
         link { attr.rel "stylesheet"; attr.href "css/index.css" }
         link { attr.rel "stylesheet"; attr.href "_content/Z.Blazor.Diagrams/style.min.css" }
         link { attr.rel "stylesheet"; attr.href "_content/Z.Blazor.Diagrams/default.styles.min.css" }
+        link { attr.rel "stylesheet"; attr.href "https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" }
+        link { attr.rel "stylesheet"; attr.href "_content/MudBlazor/MudBlazor.min.css" }
     }
     body {
         nav {
@@ -32,8 +35,20 @@ let page = doctypeHtml {
                 }
             }
         }
-        div { attr.id "main"; comp<Client.Main.MyApp> }
+        
+        // Yeah, these 3 need to be here.
+        comp<MudThemeProvider>
+        comp<MudDialogProvider>
+        comp<MudSnackbarProvider>
+        
+        comp<MudLayout> {
+            comp<MudMainContent> {
+                div { attr.id "main"; comp<Client.Main.MyApp> }
+            }
+        }
+        
         boleroScript
         script { attr.src "_content/Z.Blazor.Diagrams/script.min.js" }
+        script { attr.src "_content/MudBlazor/MudBlazor.min.js" }
     }
 }

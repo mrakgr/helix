@@ -11,6 +11,7 @@ open Bolero.Remoting.Server
 open Bolero.Server
 open HelloWorld
 open Bolero.Templating.Server
+open MudBlazor.Services
 
 type Startup() =
 
@@ -20,6 +21,7 @@ type Startup() =
         services.AddMvc() |> ignore
         services.AddServerSideBlazor() |> ignore
         services
+            .AddMudServices() 
             .AddAuthorization()
             .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie()

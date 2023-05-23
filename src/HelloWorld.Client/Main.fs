@@ -13,6 +13,7 @@ open Bolero.Remoting
 open Bolero.Remoting.Client
 open Bolero.Templating.Client
 open Microsoft.AspNetCore.Components
+open MudBlazor
 
 /// Routing endpoints definition.
 type Page =
@@ -231,13 +232,27 @@ type HelixDiagram() =
         diagram.Nodes.Add(seq { node1; node2; node3})
         diagram.Links.Add(LinkModel(node1.GetPort(PortAlignment.Right), node2.GetPort(PortAlignment.Left)))
     
-    override this.Render() = comp<CascadingValue<Diagram>> {
-        "Value" => diagram
-        comp<DiagramCanvas>
-    }
+    override this.Render() =
+        let digram_canvas = comp<CascadingValue<Diagram>> {
+            "Value" => diagram
+            comp<DiagramCanvas>
+            }
+        comp<MudMenu> {
+            // "PositionAtCursor" => true
+            // "ActivationEvent" => MouseEvent.RightClick
+            attr.fragment "ActivatorContent" (
+                div {
+                    "Hello"
+                }
+                )
+            attr.fragment "ChildContent" (concat {
+                comp<MudMenuItem> { div {"Text"} }
+                comp<MudMenuItem> { div {"Compilation"} }
+            })
+        }
+        
         
 let diagramTrialPage model dispatch =
-    // Sweet.
     Main.DiagramTrial() 
         .DiagramBody(comp<HelixDiagram> {attr.empty()})
         .Elt()

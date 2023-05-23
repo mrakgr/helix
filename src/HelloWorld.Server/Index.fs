@@ -43,7 +43,10 @@ let page = doctypeHtml {
         
         comp<MudLayout> {
             comp<MudMainContent> {
-                div { attr.id "main"; comp<Client.Main.MyApp> }
+                div {
+                    attr.id "main"
+                    comp<Client.Main.MyApp>
+                }
             }
         }
         

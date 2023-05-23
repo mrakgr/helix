@@ -241,7 +241,7 @@ type HelixDiagram() =
             // "PositionAtCursor" => true
             // "ActivationEvent" => MouseEvent.RightClick
             attr.fragment "ActivatorContent" (
-                div {
+                comp<MudButton> {
                     "Hello"
                 }
                 )
@@ -258,33 +258,45 @@ let diagramTrialPage model dispatch =
         .Elt()
 
 let view model dispatch =
-    Main()
-        .Menu(concat {
-            menuItem model Home "Home"
-            menuItem model Counter "Counter"
-            menuItem model Data "Download data"
-            menuItem model DiagramTrial "Diagram Trial"
+    comp<MudMenu> {
+        // "PositionAtCursor" => true
+        // "ActivationEvent" => MouseEvent.RightClick
+        attr.fragment "ActivatorContent" (comp<MudButton> {
+            on.click (fun e -> printfn "Hello Clicked")
+            "Hello"
         })
-        .Body(
-            cond model.page <| function
-            | Home -> homePage model dispatch
-            | Counter -> counterPage model dispatch
-            | DiagramTrial -> diagramTrialPage model dispatch
-            | Data ->
-                cond model.signedInAs <| function
-                | Some username -> dataPage model username dispatch
-                | None -> signInPage model dispatch
-        )
-        .Error(
-            cond model.error <| function
-            | None -> empty()
-            | Some err ->
-                Main.ErrorNotification()
-                    .Text(err)
-                    .Hide(fun _ -> dispatch ClearError)
-                    .Elt()
-        )
-        .Elt()
+        attr.fragment "ChildContent" (div {
+            comp<MudMenuItem> { div {"Text"} }
+            comp<MudMenuItem> { div {"Compilation"} }
+        })
+    }
+    // Main()
+    //     .Menu(concat {
+    //         menuItem model Home "Home"
+    //         menuItem model Counter "Counter"
+    //         menuItem model Data "Download data"
+    //         menuItem model DiagramTrial "Diagram Trial"
+    //     })
+    //     .Body(
+    //         cond model.page <| function
+    //         | Home -> homePage model dispatch
+    //         | Counter -> counterPage model dispatch
+    //         | DiagramTrial -> diagramTrialPage model dispatch
+    //         | Data ->
+    //             cond model.signedInAs <| function
+    //             | Some username -> dataPage model username dispatch
+    //             | None -> signInPage model dispatch
+    //     )
+    //     .Error(
+    //         cond model.error <| function
+    //         | None -> empty()
+    //         | Some err ->
+    //             Main.ErrorNotification()
+    //                 .Text(err)
+    //                 .Hide(fun _ -> dispatch ClearError)
+    //                 .Elt()
+    //     )
+    //     .Elt()
 
 type MyApp() =
     inherit ProgramComponent<Model, Message>()

@@ -1,0 +1,23 @@
+﻿@using Blazor.Diagrams.Components.Renderers;
+@using Helix.Nodes
+
+<MudCard Class="pa-8 ma-0" Style="width: 300px;" 
+         @oncontextmenu:stopPropagation>
+    <MudTextField T="string"
+                  DisableUnderLine="true"
+                  Variant="Variant.Outlined" Lines="5"
+                  @bind-Value="@Node.Text"
+                  @onmousedown:stopPropagation @onmousemove:stopPropagation
+    />
+    @foreach (var port in Node.Ports)
+    {
+        <PortRenderer Port="port"/>
+    }
+</MudCard>
+
+@code {
+
+    [Parameter]
+    public TextNode Node { get; set; }
+
+}

@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="Helix.Nodes.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Z.Blazor.Diagrams" Version="2.1.6" />
+    </ItemGroup>
+
+</Project>

@@ -13,6 +13,10 @@
         <PackageReference Include="MudBlazor" Version="6.2.5" />
         <PackageReference Include="Z.Blazor.Diagrams" Version="2.1.6" />
     </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="Helix.Fun\Helix.Fun.fsproj" />
+    </ItemGroup>
 	
 
 </Project>

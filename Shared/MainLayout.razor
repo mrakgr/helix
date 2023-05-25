@@ -4,7 +4,7 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-<MudLayout>
+<MudLayout Style="height: 100vh; width: 100vw;">
     <MudAppBar Elevation="0">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
         <MudSpacer />
@@ -17,8 +17,10 @@
         </MudDrawerHeader>
         <NavMenu />
     </MudDrawer>
-    <MudMainContent >
-        <MudContainer Class="ma-0 pa-4">
+    <MudMainContent Style="height: 100%">
+        <MudContainer Class="ma-0 pa-0"
+                      MaxWidth="MaxWidth.False"
+                      Style="height: 100%">
             @Body
         </MudContainer>
     </MudMainContent>

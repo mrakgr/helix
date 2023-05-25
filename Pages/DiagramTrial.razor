@@ -3,19 +3,17 @@
 @using Blazor.Diagrams.Core.Geometry
 @using Helix.Components
 @using Helix.Nodes
-@using System.Net.Mime
 
-<MudMenu Label="Add Node" PositionAtCursor="true" ActivationEvent="MouseEvent.RightClick">
+<MudMenu Label="Add Node" PositionAtCursor="true" ActivationEvent="MouseEvent.RightClick"
+         Style="width: 100%; height: 100%;">
     <ActivatorContent>
-        <div style="width: 70vw; height: 70vh">
-            <CascadingValue Value="Diagram">
-                <DiagramCanvas></DiagramCanvas>
-            </CascadingValue>
-        </div>
+        <CascadingValue Value="Diagram">
+            <DiagramCanvas></DiagramCanvas>
+        </CascadingValue>
     </ActivatorContent>
     <ChildContent>
-        <MudMenuItem OnClick="AddNode">Text</MudMenuItem>
-        <MudMenuItem>Compilation</MudMenuItem>
+        <MudMenuItem OnClick="AddTextNode">Text</MudMenuItem>
+        <MudMenuItem OnClick="AddCompilationNode">Compilation</MudMenuItem>
     </ChildContent>
 </MudMenu>
 
@@ -28,8 +26,8 @@
 
         var options = new DiagramOptions
         {
-            // I had to disable virtualization due to the zoom throwing exceptions.
-            // It should be fixed in the next version.
+    // I had to disable virtualization due to the zoom throwing exceptions.
+    // It should be fixed in the next version.
             EnableVirtualization = false, // Work around for: https://github.com/Blazor-Diagrams/Blazor.Diagrams/issues/322
             DeleteKey = "Delete", // What key deletes the selected nodes/links
             DefaultNodeComponent = null, // Default component for nodes
@@ -45,38 +43,23 @@
             }
         };
         Diagram = new Diagram(options);
-        Setup();
-        
-        Diagram.RegisterModelComponent<TextNode,TextComponent>();
+
+        Diagram.RegisterModelComponent<TextNode, TextComponent>();
+        Diagram.RegisterModelComponent<CompilationNode, CompilationComponent>();
     }
 
-    private void Setup()
-    {
-        var f = (double x, double y) => NewDefaultNode(new Point(x, y));
-        var node1 = f(50, 50);
-        var node2 = f(300, 300);
-        var node3 = f(300, 50);
-        Diagram.Nodes.Add(new[] { node1, node2, node3 });
-        Diagram.Links.Add(new LinkModel(node1.GetPort(PortAlignment.Right), node2.GetPort(PortAlignment.Left)));
-    }
-
-    private NodeModel NewDefaultNode(Point p)
-    {
-        // Ah, the ports are added here.
-        var node = new NodeModel(p);
-        node.AddPort(PortAlignment.Bottom);
-        node.AddPort(PortAlignment.Top);
-        node.AddPort(PortAlignment.Left);
-        node.AddPort(PortAlignment.Right);
-        return node;
-    }
-    
     private NodeModel NewTextNode(Point p)
     {
-        var node = new TextNode(p) {Text="qwe"};
-        // They are getting added here...
-        node.AddPort(PortAlignment.Left);
-        node.AddPort(PortAlignment.Right);
+        var node = new TextNode(p) { Text = "" };
+        node.AddPort(new HelixPort(node, PortAlignment.Left, true));
+        node.AddPort(new HelixPort(node, PortAlignment.Right, false));
+        return node;
+    }
+
+    private NodeModel NewCompilationNode(Point p)
+    {
+        var node = new CompilationNode(p) { Text = "" };
+        node.AddPort(new HelixPort(node, PortAlignment.Left, true)); // It doesn't have an output port.
         return node;
     }
 
@@ -85,9 +68,20 @@
         return Diagram.GetRelativeMousePoint(x, y);
     }
 
-    private void AddNode(MouseEventArgs ev)
+    private void AddNode(MouseEventArgs ev, Func<Point, NodeModel> f)
     {
-        Diagram.Nodes.Add(NewTextNode(ToCanvasPoint(ev.ClientX, ev.ClientY)));
+        Diagram.Nodes.Add(f(ToCanvasPoint(ev.ClientX, ev.ClientY)));
+    }
+
+    // If this was F# I'd use partial application here, but nwm that for now.
+    private void AddTextNode(MouseEventArgs ev)
+    {
+        AddNode(ev, NewTextNode);
+    }
+
+    private void AddCompilationNode(MouseEventArgs ev)
+    {
+        AddNode(ev, NewCompilationNode);
     }
 
 }

@@ -1,5 +1,8 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
 @using Helix.Nodes
+@using Helix.Types
+
+@inject HelixDiagram Diagram
 
 <style>
     .custom-node {
@@ -48,17 +51,34 @@
 
 @code {
     [Parameter]
-    public CompilationNode Node { get; set; }
+    public required CompilationNode Node { get; init; }
     
     private void OnCompile()
     {
-        // You couldn't see it, but I did some styling so the max width and height is taken up by the context menu.
-        // Now the diagram canvas will use the entire free screen.
-        
-        // Great.
-        // Now we can finally move to compilation.
-        // Time to bring back F#!
-        
-        throw new NotImplementedException();
+        try
+        {
+            // Let's make use of these.
+            var nodes = Compilation.compile(Node);
+            
+            // C# doesn't have Array.choose so I went for the next best thing.
+            // Maybe there is a better way to do this? If you know, leave a comment.
+            
+            // Everything works as intended.
+            // Thank you for watching.
+            var text =
+                nodes.SelectMany(x =>
+                {
+                    if (x is TextNode node)
+                    {
+                        return new [] { node.Text };
+                    }
+                    return new string [] { };
+                });
+            Node.Text = String.Join('\n', text);
+        }
+        catch (Compilation.CycleException ex)
+        {
+            Console.WriteLine("Compilation failed. There is a cycle in the graph.");
+        }
     }
 }

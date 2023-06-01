@@ -1,0 +1,56 @@
+﻿@using Blazor.Diagrams.Components.Renderers;
+@using Helix.Nodes
+
+<style>
+    .custom-node {
+        min-width: 300px;
+    }
+
+    .custom-node .port {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background-color: #79bcdb;
+        border: 3px solid #29A9E5;
+        cursor: pointer;
+        visibility: visible;
+        transform: translate(-50%, -100%);
+    }
+    
+    .custom-node .port.left {
+        top: 50%;
+        left: 0;
+    }
+    
+    .custom-node .port.right {
+        top: 50%;
+        left: 100%;
+    }
+    
+    .custom-node .port:hover, .custom-node .port.has-links {
+    background-color: black;
+    }
+</style>
+
+<MudCard Class="pa-8 ma-0 custom-node"
+         @oncontextmenu:stopPropagation>
+    <MudTextField T="string"
+                  DisableUnderLine="true"
+                  Variant="Variant.Outlined" Lines="5"
+                  @bind-Value="@Node.Text"
+                  @onmousedown:stopPropagation @onmousemove:stopPropagation
+                  @onwheel:stopPropagation/>
+    @foreach (var port in Node.Ports)
+    {
+        <PortRenderer Port="port">
+        </PortRenderer>
+    }
+</MudCard>
+
+@code {
+    [Parameter]
+    public TextNode Node { get; set; }
+    
+    
+}

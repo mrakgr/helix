@@ -5,6 +5,10 @@ open Blazor.Diagrams.Core
 open Blazor.Diagrams.Core.Geometry
 open Blazor.Diagrams.Core.Models
 
+// Just what is this project doing in the C# one. Is it copied or linked indirectly?
+// Linked indirectly.
+// Let me commit here, and I'll erase the C# link.
+
 type TextNode(p : Point) =
     inherit NodeModel(p)
     

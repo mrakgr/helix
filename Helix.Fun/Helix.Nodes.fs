@@ -4,6 +4,7 @@ open System.Collections.Generic
 open Blazor.Diagrams.Core
 open Blazor.Diagrams.Core.Geometry
 open Blazor.Diagrams.Core.Models
+open Microsoft.AspNetCore.Components
 
 type TextNode(p : Point) =
     inherit NodeModel(p)
@@ -13,7 +14,12 @@ type TextNode(p : Point) =
 type CompilationNode(p : Point) =
     inherit NodeModel(p)
     
-    member val Text = "" with get, set
+    member val ChildComponent : RenderFragment IEnumerable = [||] with get, set
+    
+type ImageNode(p : Point) =
+    inherit NodeModel(p)
+    
+    member val Src = "" with get, set
     
 type HelixPort(parent, alignment, isInput : bool) =
     inherit PortModel(parent, alignment, null, null)

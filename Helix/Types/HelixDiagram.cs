@@ -11,6 +11,7 @@ public class HelixDiagram : Diagram
     {
         RegisterModelComponent<TextNode, TextComponent>();
         RegisterModelComponent<CompilationNode, CompilationComponent>();
+        RegisterModelComponent<ImageNode, ImageComponent>();
     }
 
     private static DiagramOptions DiagramOptions()
@@ -29,6 +30,7 @@ public class HelixDiagram : Diagram
             Zoom = new DiagramZoomOptions // Other
             {
                 Minimum = 0.1, // Minimum zoom value
+                Maximum = 10,
                 ScaleFactor = 1.3,
                 Inverse = true, // Whether to inverse the direction of the zoom when using the wheel
             }

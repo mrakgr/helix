@@ -36,12 +36,11 @@
     <MudButton Class="mud-theme-primary" OnClick="OnCompile">
         Compile
     </MudButton>
-    <MudTextField T="string"
-                  DisableUnderLine="true"
-                  Variant="Variant.Outlined" Lines="5"
-                  @bind-Value="@Node.Text"
-                  @onmousedown:stopPropagation @onmousemove:stopPropagation
-                  @onwheel:stopPropagation/>
+    <br/>
+    @foreach (var x in Node.ChildComponent)
+    {
+        @x
+    }
     @foreach (var port in Node.Ports)
     {
         <PortRenderer Port="port">
@@ -50,35 +49,50 @@
 </MudCard>
 
 @code {
+
     [Parameter]
-    public required CompilationNode Node { get; init; }
+    [EditorRequired]
+    public required CompilationNode Node { get; set; }
+
+
+    RenderFragment OnCompileText(string text)
+    {
+        return @<div>
+                   @text
+               </div>;
+    }
     
+    private RenderFragment OnCompileImage(string path)
+    {
+        return @<MudImage Src="@path">
+               </MudImage>;
+    }
+
     private void OnCompile()
     {
         try
         {
-            // Let's make use of these.
             var nodes = Compilation.compile(Node);
-            
-            // C# doesn't have Array.choose so I went for the next best thing.
-            // Maybe there is a better way to do this? If you know, leave a comment.
-            
-            // Everything works as intended.
-            // Thank you for watching.
-            var text =
+            Node.ChildComponent = 
                 nodes.SelectMany(x =>
                 {
-                    if (x is TextNode node)
+                    if (x is TextNode textNode)
                     {
-                        return new [] { node.Text };
+                        return new[] { OnCompileText(textNode.Text) };
                     }
-                    return new string [] { };
+                    if (x is ImageNode imageNode)
+                    {
+                        return new[] { OnCompileImage(imageNode.Src) };
+                    }
+                    return new RenderFragment[] { };
                 });
-            Node.Text = String.Join('\n', text);
         }
-        catch (Compilation.CycleException ex)
+        catch (Compilation.CycleException)
         {
             Console.WriteLine("Compilation failed. There is a cycle in the graph.");
         }
     }
+
+
+
 }

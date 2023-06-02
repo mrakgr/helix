@@ -1,6 +1,8 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
 @using Helix.Nodes
 
+@inject IJSRuntime Js;
+
 <style>
     .custom-node {
         min-width: 300px;
@@ -31,16 +33,33 @@
     .custom-node .port:hover, .custom-node .port.has-links {
     background-color: black;
     }
+    
+    .image-node {
+        width: 600px;
+        height: 400px;
+    }
 </style>
 
 <MudCard Class="pa-8 ma-0 custom-node"
          @oncontextmenu:stopPropagation>
-    <MudTextField T="string"
-                  DisableUnderLine="true"
-                  Variant="Variant.Outlined" Lines="5"
-                  @bind-Value="@Node.Text"
-                  @onmousedown:stopPropagation @onmousemove:stopPropagation
-                  @onwheel:stopPropagation/>
+    <MudStack Row="true" Justify="Justify.SpaceBetween">
+        <MudFileUpload T="IBrowserFile" FilesChanged="OnUploadFiles">
+            <ButtonTemplate>
+                <MudFab HtmlTag="label"
+                        Color="Color.Secondary"
+                        Icon="@Icons.Material.Filled.Image"
+                        Label="Load picture"
+                        for="@context"/>
+            </ButtonTemplate>
+        </MudFileUpload>
+        <MudButton Variant="Variant.Filled"
+                   @onclick="OnCopyFromClipBoard">
+            Copy URL From Clipboard
+        </MudButton>
+    </MudStack>
+    <br>
+    <MudImage ObjectFit="ObjectFit.Contain" Src="@Node.Src" Class="rounded-lg image-node"/>
+
     @foreach (var port in Node.Ports)
     {
         <PortRenderer Port="port">
@@ -49,10 +68,34 @@
 </MudCard>
 
 @code {
-    // Not bad, we fixed the project structure.
-    
+
     [Parameter]
-    public TextNode Node { get; set; }
-    
-    
+    [EditorRequired]
+    public required ImageNode Node { get; set; }
+
+    private async Task OnUploadFiles(IBrowserFile file)
+    {
+        await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
+        var dotnetImageStream = new DotNetStreamReference(file.OpenReadStream(file.Size));
+        Node.Src = await Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, file.ContentType);
+    }
+
+    static readonly string[] AllowedUriSchemas = { Uri.UriSchemeHttp, Uri.UriSchemeHttps, Uri.UriSchemeFile, Uri.UriSchemeFtp, Uri.UriSchemeFtps };
+
+    bool IsUrl(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri uriResult) &&
+               AllowedUriSchemas.Any(x => uriResult.Scheme.Equals(x));
+    }
+
+    private async Task OnCopyFromClipBoard(MouseEventArgs obj)
+    {
+        var url = await Js.InvokeAsync<string>("navigator.clipboard.readText");
+        if (IsUrl(url))
+        {
+            await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
+            Node.Src = url;
+        }
+    }
+
 }

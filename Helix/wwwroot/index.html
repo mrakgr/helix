@@ -27,11 +27,19 @@
             const blob = new Blob([arrayBuffer], {type});
             return URL.createObjectURL(blob)
         }
+        
+        function registerUnloadEvent(component) {
+            window.addEventListener("beforeunload", function () {
+                component.invokeMethodAsync('OnBeforeUnload');
+            })
+        }
     </script>
     
     <script src="_framework/blazor.webassembly.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="_content/Z.Blazor.Diagrams/script.min.js"></script>
+    
+    <script src="js/localforage.min.js"></script>
 </body>
 
 </html>

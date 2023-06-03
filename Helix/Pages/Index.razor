@@ -1,9 +1,39 @@
 ﻿@page "/"
 
-<PageTitle>Index</PageTitle>
+<PageTitle>Helix</PageTitle>
 
+@using Blazor.Diagrams.Core.Geometry
+@using Helix.Components
+@using Helix.Nodes
+@using Helix.Types
+@using Microsoft.FSharp.Core
 
+@inject HelixDiagram Diagram
+@inject IJSRuntime Js
 
-<MudText Typo="Typo.h3" GutterBottom="true">Hello, world!</MudText>
-<MudText Class="mb-8">Welcome to your new app, powered by MudBlazor!</MudText>
-<MudAlert Severity="Severity.Normal">You can find documentation and examples on our website here: <MudLink Href="https://mudblazor.com" Typo="Typo.body2" Color="Color.Inherit"><b>www.mudblazor.com</b></MudLink></MudAlert>
+<MudMenu Label="Add Node" PositionAtCursor="true" ActivationEvent="MouseEvent.RightClick"
+         Style="width: 100%; height: 100%;">
+    <ActivatorContent>
+        <CascadingValue Value="Diagram">
+            <DiagramCanvas></DiagramCanvas>
+        </CascadingValue>
+    </ActivatorContent>
+    <ChildContent>
+        <MudMenuItem OnClick="CreateNode(x => new TextNode(x))">Text</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(x => new ImageNode(x))">Image</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(x => new CompilationNode(x))">Compilation</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(x => new DatabaseTestNode(x))">Database Test</MudMenuItem>
+    </ChildContent>
+</MudMenu>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Diagram.OnLoad();
+    }
+
+    private Action<MouseEventArgs> CreateNode(Func<Point, NodeModel> f) => ev =>
+    {
+        Utils.add_node(Diagram, f, ev);
+    };
+}

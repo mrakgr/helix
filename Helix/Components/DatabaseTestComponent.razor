@@ -1,0 +1,19 @@
+﻿@using Helix.Nodes
+@using Helix.Types
+
+@inject HelixDiagram Diagram
+@inject IJSRuntime Js
+
+<MudCard Class="pa-8">
+    <MudStack Row="true">
+        <MudButton @onclick="Diagram.OnStore">Store Database</MudButton>
+        <MudButton @onclick="Diagram.OnLoad">Load Database</MudButton>
+    </MudStack>
+</MudCard>
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public required DatabaseTestNode Node { get; set; }
+}

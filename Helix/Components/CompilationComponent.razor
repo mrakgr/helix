@@ -2,8 +2,6 @@
 @using Helix.Nodes
 @using Helix.Types
 
-@inject HelixDiagram Diagram
-
 <style>
     .custom-node {
         min-width: 300px;
@@ -37,10 +35,12 @@
         Compile
     </MudButton>
     <br/>
-    @foreach (var x in Node.ChildComponent)
-    {
-        @x
-    }
+    <MudStack Spacing="0">
+        @foreach (var x in Node.ChildComponent)
+        {
+            @x
+        }
+    </MudStack>
     @foreach (var port in Node.Ports)
     {
         <PortRenderer Port="port">
@@ -57,9 +57,9 @@
 
     RenderFragment OnCompileText(string text)
     {
-        return @<div>
+        return @<MudText Typo="Typo.body1">
                    @text
-               </div>;
+               </MudText>;
     }
     
     private RenderFragment OnCompileImage(string path)

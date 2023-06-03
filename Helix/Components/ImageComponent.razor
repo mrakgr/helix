@@ -84,7 +84,7 @@
 
     bool IsUrl(string url)
     {
-        return Uri.TryCreate(url, UriKind.Absolute, out Uri uriResult) &&
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uriResult) &&
                AllowedUriSchemas.Any(x => uriResult.Scheme.Equals(x));
     }
 

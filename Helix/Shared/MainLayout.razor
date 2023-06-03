@@ -15,7 +15,6 @@
         <MudDrawerHeader>
             <MudText Typo="Typo.h6">Helix</MudText>
         </MudDrawerHeader>
-        <NavMenu />
     </MudDrawer>
     <MudMainContent Style="height: 100%">
         <MudContainer Class="ma-0 pa-0"
@@ -27,7 +26,7 @@
 </MudLayout>
 
 @code {
-    bool _drawerOpen = true;
+    bool _drawerOpen = false;
 
     void DrawerToggle()
     {

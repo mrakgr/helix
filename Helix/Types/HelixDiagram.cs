@@ -1,17 +1,52 @@
 ﻿using Blazor.Diagrams.Core;
 using Helix.Components;
 using Helix.Nodes;
+using Microsoft.JSInterop;
 
 namespace Helix.Types;
 
 public class HelixDiagram : Diagram
 {
+    private bool _isFirst = true;
+    private IJSRuntime Js { get; }
 
-    public HelixDiagram() : base(DiagramOptions())
+    public HelixDiagram(IJSRuntime js) : base(DiagramOptions())
     {
+        Js = js;
         RegisterModelComponent<TextNode, TextComponent>();
         RegisterModelComponent<CompilationNode, CompilationComponent>();
         RegisterModelComponent<ImageNode, ImageComponent>();
+        RegisterModelComponent<DatabaseTestNode, DatabaseTestComponent>();
+        
+    }
+    
+    public async Task OnLoad()
+    {
+        if (_isFirst)
+        {
+            await Js.InvokeVoidAsync("registerUnloadEvent", DotNetObjectReference.Create(this));
+            _isFirst = false;
+        }
+        StoreLoad.load(this,
+            await Js.InvokeAsync<string>("localforage.getItem", "diagram_nodes"),
+            await Js.InvokeAsync<string>("localforage.getItem", "diagram_links")
+        );
+    }
+
+    public async Task OnStore()
+    {
+        if (!_isFirst)
+        {
+            var (nodes, links) = StoreLoad.store(this);
+            await Js.InvokeVoidAsync("localforage.setItem", "diagram_nodes", nodes);
+            await Js.InvokeVoidAsync("localforage.setItem", "diagram_links", links);
+        }
+    }
+    
+    [JSInvokable]
+    public Task OnBeforeUnload()
+    {
+        return OnStore();
     }
 
     private static DiagramOptions DiagramOptions()

@@ -161,9 +161,28 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
         | _ -> ()
         )
     
+    let mutable nodes_movement_start = null
+    let is_mouse_down () = nodes_movement_start <> null
+    do this.add_MouseDown (fun _ _ ->
+        printfn "Mouse down triggered."
+        nodes_movement_start <- this.Nodes |> Seq.choose (fun x -> if x.Selected then Some (KeyValuePair(x, x.Position)) else None) |> Dictionary
+        )
+    
+    do this.add_MouseUp (fun _ _ ->
+        if is_mouse_down() then
+            printfn "Mouse up triggered."
+            let nodes_movement_end = nodes_movement_start |> Seq.map (fun (KeyValue(x,_)) -> KeyValuePair(x, x.Position)) |> Dictionary
+            let has_changed = Seq.exists2 (fun (KeyValue(_,p1)) (KeyValue(_,p2)) -> p1 <> p2) nodes_movement_start nodes_movement_end
+            printfn "has_changed: %b" has_changed
+            if has_changed then undo.Push(U_NodesMoved(nodes_movement_start,nodes_movement_end))
+            nodes_movement_start <- null
+        )
+    
+    let nodes_moved d = for KeyValue(k : NodeModel,v) in d do k.Position <- v; k.RefreshAll(); k.ReinitializePorts()
+    
     member this.Undo() =
         printfn "Pressed Undo"
-        if undo.Count > 0 then
+        if is_mouse_down() = false && undo.Count > 0 then
             is_handler_active <- false
             let act = undo.Pop()
             redo.Push(act)
@@ -172,12 +191,12 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             | U_NodeRemoved x -> this.Nodes.Add x
             | U_LinkAdded x -> this.Links.Remove x
             | U_LinkRemoved x -> this.Links.Add x
-            | U_NodesMoved(start, ``end``) -> for KeyValue(k,v) in start do k.Position <- v
+            | U_NodesMoved(start, ``end``) -> nodes_moved start
             is_handler_active <- true
             
     member this.Redo() =
         printfn "Pressed Redo"
-        if redo.Count > 0 then
+        if is_mouse_down() = false && redo.Count > 0 then
             is_handler_active <- false
             let act = redo.Pop()
             undo.Push(act)
@@ -186,7 +205,7 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             | U_NodeRemoved x -> this.Nodes.Remove x
             | U_LinkAdded x -> this.Links.Add x
             | U_LinkRemoved x -> this.Links.Remove x
-            | U_NodesMoved(start, ``end``) -> for KeyValue(k,v) in ``end`` do k.Position <- v
+            | U_NodesMoved(start, ``end``) -> nodes_moved ``end``
             is_handler_active <- true
             
     member this.OnLoad() = task {

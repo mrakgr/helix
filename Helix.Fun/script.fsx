@@ -1,0 +1,1 @@
+﻿Seq.forall2 (fun a b -> a = b) [] []

@@ -7,6 +7,7 @@
 
     <ItemGroup>
         <Compile Include="Helix.Nodes.fs" />
+        <None Include="script.fsx" />
     </ItemGroup>
 
     <ItemGroup>

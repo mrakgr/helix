@@ -39,6 +39,7 @@
                   DisableUnderLine="true"
                   Variant="Variant.Outlined" Lines="5"
                   @bind-Value="@Node.Text"
+                  @onkeydown:stopPropagation
                   @onmousedown:stopPropagation @onmousemove:stopPropagation
                   @onwheel:stopPropagation/>
     @foreach (var port in Node.Ports)

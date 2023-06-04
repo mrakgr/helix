@@ -144,42 +144,27 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
     let undo = Stack()
     
     let mutable is_loaded = false
+    let mutable is_handler_active = true
     
-    let handler_node_add = Action<_>(fun x ->
-        printfn "Adding node"
-        undo.Push(U_NodeAdded x); redo.Clear())
-    let handler_node_remove = Action<_>(fun x ->
-        printfn "Removing node"
-        undo.Push(U_NodeRemoved x); redo.Clear())
-    let handler_link_add = Action<_>(fun x ->
-        printfn "Adding link"
-        undo.Push(U_LinkAdded x); redo.Clear())
-    let handler_link_remove = Action<_>(fun x ->
-        printfn "Removing link"
-        undo.Push(U_LinkRemoved x); redo.Clear())
-    
-    let add_layer_handlers () =
-        printfn "Adding handlers"
-        this.Nodes.add_Added handler_node_add; this.Nodes.add_Removed handler_node_remove
-        this.Links.add_Added handler_link_add; this.Links.add_Removed handler_link_remove
-        
-    let remove_layer_handlers () =
-        printfn "Removing handlers"
-        this.Nodes.remove_Added handler_node_add; this.Nodes.remove_Removed handler_node_remove
-        this.Links.remove_Added handler_link_add; this.Links.remove_Removed handler_link_remove
-    
-    do add_layer_handlers ()
-    do remove_layer_handlers ()
+    let handler_template f x =
+        if is_handler_active then
+            undo.Push(f x)
+            redo.Clear()
+    do 
+        this.Nodes.add_Added (handler_template U_NodeAdded); this.Nodes.add_Removed (handler_template U_NodeRemoved)
+        this.Links.add_Added (handler_template U_LinkAdded); this.Links.add_Removed (handler_template U_LinkAdded)
     
     do this.add_KeyDown (fun ev ->
-        if ev.CtrlKey && ev.Key.ToLower() = "z" then this.Undo()
-        if ev.CtrlKey && ev.ShiftKey && ev.Key.ToLower() = "z" then this.Redo()
+        match ev.Key.ToLower() with
+        | "z" when ev.CtrlKey && ev.ShiftKey -> this.Redo()
+        | "z" when ev.CtrlKey -> this.Undo()
+        | _ -> ()
         )
     
     member this.Undo() =
-        printfn "%A" undo
+        printfn "Pressed Undo"
         if undo.Count > 0 then
-            remove_layer_handlers()
+            is_handler_active <- false
             let act = undo.Pop()
             redo.Push(act)
             match act with
@@ -188,11 +173,12 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             | U_LinkAdded x -> this.Links.Remove x
             | U_LinkRemoved x -> this.Links.Add x
             | U_NodesMoved(start, ``end``) -> for KeyValue(k,v) in start do k.Position <- v
-            add_layer_handlers()
+            is_handler_active <- true
             
     member this.Redo() =
+        printfn "Pressed Redo"
         if redo.Count > 0 then
-            remove_layer_handlers()
+            is_handler_active <- false
             let act = redo.Pop()
             undo.Push(act)
             match act with
@@ -201,7 +187,7 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             | U_LinkAdded x -> this.Links.Add x
             | U_LinkRemoved x -> this.Links.Remove x
             | U_NodesMoved(start, ``end``) -> for KeyValue(k,v) in ``end`` do k.Position <- v
-            add_layer_handlers()
+            is_handler_active <- true
             
     member this.OnLoad() = task {
         if not is_loaded then

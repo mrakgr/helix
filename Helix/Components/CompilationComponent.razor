@@ -30,6 +30,7 @@
 </style>
 
 <MudCard Class="pa-8 ma-0 darken-1 custom-node d-flex flex-column justify-center"
+         @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
     <MudButton Class="mud-theme-primary" OnClick="OnCompile">
         Compile

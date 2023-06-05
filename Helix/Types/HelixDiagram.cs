@@ -1,6 +1,8 @@
-﻿using Blazor.Diagrams.Core;
+﻿using System.Runtime.CompilerServices;
+using Blazor.Diagrams.Core;
 using Helix.Components;
 using Helix.Nodes;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 
 namespace Helix.Types;
@@ -14,7 +16,7 @@ public class HelixDiagram : HelixDiagramBase
         RegisterModelComponent<ImageNode, ImageComponent>();
         RegisterModelComponent<DatabaseTestNode, DatabaseTestComponent>();
     }
-    
+
     private static DiagramOptions DiagramOptions()
     {
         // I had to disable virtualization due to the zoom throwing exceptions.

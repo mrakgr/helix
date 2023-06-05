@@ -3,7 +3,9 @@
 
 @inject HelixDiagram Diagram
 
-<MudCard Class="pa-8">
+<MudCard Class="pa-8"
+         @onkeydown:stopPropagation @onkeyup:stopPropagation
+         @oncontextmenu:stopPropagation>
     <MudStack Row="true">
         <MudButton @onclick="Diagram.OnStore">Store Database</MudButton>
         <MudButton @onclick="Diagram.OnLoad">Load Database</MudButton>

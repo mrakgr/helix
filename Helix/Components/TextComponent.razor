@@ -1,5 +1,8 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
 @using Helix.Nodes
+@using System.Diagnostics
+
+@inject IJSRuntime Js
 
 <style>
     .custom-node {
@@ -31,15 +34,20 @@
     .custom-node .port:hover, .custom-node .port.has-links {
     background-color: black;
     }
+    
+    .helix-text-component {
+    
+    }
 </style>
 
 <MudCard Class="pa-8 ma-0 custom-node"
+         @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
     <MudTextField T="string"
+                  Class="helix-text-component"
                   DisableUnderLine="true"
                   Variant="Variant.Outlined" Lines="5"
                   @bind-Value="@Node.Text"
-                  @onkeydown:stopPropagation
                   @onmousedown:stopPropagation @onmousemove:stopPropagation @onmouseup:stopPropagation
                   @onwheel:stopPropagation/>
     @foreach (var port in Node.Ports)
@@ -52,5 +60,4 @@
 @code {
     [Parameter] [EditorRequired]
     public required TextNode Node { get; set; }
-
 }

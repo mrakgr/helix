@@ -137,6 +137,7 @@ type UndoBufferActions =
     | U_LinkRemoved of BaseLinkModel
     | U_NodesMoved of start: Dictionary<NodeModel,Point> * ``end``: Dictionary<NodeModel,Point>
         
+open FSharp.Control.Reactive
 type HelixDiagramBase(Js : IJSRuntime, opts) as this =
     inherit Diagram(opts)
     
@@ -153,36 +154,37 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
     do 
         this.Nodes.add_Added (handler_template U_NodeAdded); this.Nodes.add_Removed (handler_template U_NodeRemoved)
         this.Links.add_Added (handler_template U_LinkAdded); this.Links.add_Removed (handler_template U_LinkAdded)
-    
-    do this.add_KeyDown (fun ev ->
+        
+    do this.add_KeyDown (fun ev -> 
         match ev.Key.ToLower() with
         | "z" when ev.CtrlKey && ev.ShiftKey -> this.Redo()
         | "z" when ev.CtrlKey -> this.Undo()
         | _ -> ()
         )
     
-    let mutable nodes_movement_start = null
-    let is_mouse_down () = nodes_movement_start <> null
-    do this.add_MouseDown (fun _ _ ->
-        printfn "Mouse down triggered."
-        nodes_movement_start <- this.Nodes |> Seq.choose (fun x -> if x.Selected then Some (KeyValuePair(x, x.Position)) else None) |> Dictionary
-        )
-    
-    do this.add_MouseUp (fun _ _ ->
-        if is_mouse_down() then
-            printfn "Mouse up triggered."
-            let nodes_movement_end = nodes_movement_start |> Seq.map (fun (KeyValue(x,_)) -> KeyValuePair(x, x.Position)) |> Dictionary
-            let has_changed = Seq.exists2 (fun (KeyValue(_,p1)) (KeyValue(_,p2)) -> p1 <> p2) nodes_movement_start nodes_movement_end
-            printfn "has_changed: %b" has_changed
-            if has_changed then undo.Push(U_NodesMoved(nodes_movement_start,nodes_movement_end))
-            nodes_movement_start <- null
-        )
+    do
+        // let inline g add remove = Observable.fromEventGeneric (fun f -> add (fun a b -> f (a,b))) (fun f -> remove (fun a b -> f (a,b)))
+        let inline fromEvent add remove =
+            let inline g (h : Action<_,_> -> unit) (f : Action<_>) = h (Action<_,_>(fun a b -> f.Invoke (a,b)))
+            System.Reactive.Linq.Observable.FromEvent<_>(g add, g remove)
+        let mouse_down = fromEvent this.add_MouseDown this.remove_MouseDown
+        let mouse_up = fromEvent this.add_MouseUp this.remove_MouseUp
+        let nodes_moved : UndoBufferActions IObservable =
+            mouse_down |> Observable.switchMap (fun _ ->
+                let nodes_movement_start = this.Nodes |> Seq.choose (fun x -> if x.Selected then Some (KeyValuePair(x, x.Position)) else None) |> Dictionary
+                mouse_up |> Observable.first |> Observable.choose (fun _ ->
+                    let nodes_movement_end = nodes_movement_start |> Seq.map (fun (KeyValue(x,_)) -> KeyValuePair(x, x.Position)) |> Dictionary
+                    let has_changed = Seq.exists2 (fun (KeyValue(_,p1)) (KeyValue(_,p2)) -> p1 <> p2) nodes_movement_start nodes_movement_end
+                    if has_changed then Some (U_NodesMoved(nodes_movement_start,nodes_movement_end)) else None
+                    )
+                )
+        Observable.subscribe undo.Push nodes_moved |> ignore
+        ()
     
     let nodes_moved d = for KeyValue(k : NodeModel,v) in d do k.Position <- v; k.RefreshAll(); k.ReinitializePorts()
     
     member this.Undo() =
-        printfn "Pressed Undo"
-        if is_mouse_down() = false && undo.Count > 0 then
+        if undo.Count > 0 then
             is_handler_active <- false
             let act = undo.Pop()
             redo.Push(act)
@@ -195,8 +197,7 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             is_handler_active <- true
             
     member this.Redo() =
-        printfn "Pressed Redo"
-        if is_mouse_down() = false && redo.Count > 0 then
+        if redo.Count > 0 then
             is_handler_active <- false
             let act = redo.Pop()
             undo.Push(act)

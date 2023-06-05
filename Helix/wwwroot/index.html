@@ -33,6 +33,15 @@
                 component.invokeMethodAsync('OnBeforeUnload');
             })
         }
+        
+        document.onkeydown = function (e) {
+            if (e.key.toLowerCase() === 'q') {
+                console.log(`${e.target.tagName} ${JSON.stringify(e.target.classList)}`)
+            }
+            if (e.ctrlKey && e.key.toLowerCase() === 'z' && e.target.tagName !== "TEXTAREA") {
+                e.preventDefault()
+            }
+        }
     </script>
     
     <script src="_framework/blazor.webassembly.js"></script>

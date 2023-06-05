@@ -41,6 +41,7 @@
 </style>
 
 <MudCard Class="pa-8 ma-0 custom-node"
+         @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
     <MudStack Row="true" Justify="Justify.SpaceBetween">
         <MudFileUpload T="IBrowserFile" FilesChanged="OnUploadFiles">

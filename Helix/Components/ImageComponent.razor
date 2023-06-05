@@ -1,5 +1,6 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
 @using Helix.Nodes
+@using System.Reactive.Subjects
 
 @inject IJSRuntime Js;
 
@@ -31,7 +32,7 @@
     }
     
     .custom-node .port:hover, .custom-node .port.has-links {
-    background-color: black;
+        background-color: black;
     }
     
     .image-node {
@@ -74,29 +75,44 @@
     [EditorRequired]
     public required ImageNode Node { get; set; }
 
-    private async Task OnUploadFiles(IBrowserFile file)
+    ReactiveURLs _urls;
+
+    protected override void OnInitialized()
     {
-        await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
-        var dotnetImageStream = new DotNetStreamReference(file.OpenReadStream(file.Size));
-        Node.Src = await Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, file.ContentType);
+        _urls = new ReactiveURLs(Js);
+        _urls.URL.SubscribeAsync()
     }
 
-    static readonly string[] AllowedUriSchemas = { Uri.UriSchemeHttp, Uri.UriSchemeHttps, Uri.UriSchemeFile, Uri.UriSchemeFtp, Uri.UriSchemeFtps };
-
-    bool IsUrl(string url)
+    private Task OnCopyFromClipBoard()
     {
-        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uriResult) &&
-               AllowedUriSchemas.Any(x => uriResult.Scheme.Equals(x));
+        throw new NotImplementedException();
     }
+    
 
-    private async Task OnCopyFromClipBoard(MouseEventArgs obj)
-    {
-        var url = await Js.InvokeAsync<string>("navigator.clipboard.readText");
-        if (IsUrl(url))
-        {
-            await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
-            Node.Src = url;
-        }
-    }
+    // private async Task OnUploadFiles(IBrowserFile file)
+    // {
+    //     await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
+    //     using var dotnetImageStream = new DotNetStreamReference(file.OpenReadStream(file.Size));
+    //     Node.Src = await Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, file.ContentType);
+    // }
+    //
+    // static readonly string[] AllowedUriSchemas = { Uri.UriSchemeHttp, Uri.UriSchemeHttps, Uri.UriSchemeFile, Uri.UriSchemeFtp, Uri.UriSchemeFtps };
+    //
+    // bool IsUrl(string url)
+    // {
+    //     return Uri.TryCreate(url, UriKind.Absolute, out Uri? uriResult) &&
+    //            AllowedUriSchemas.Any(x => uriResult.Scheme.Equals(x));
+    // }
+    //
+    // private async Task OnCopyFromClipBoard(MouseEventArgs obj)
+    // {
+    //     var url = await Js.InvokeAsync<string>("navigator.clipboard.readText");
+    //     if (IsUrl(url))
+    //     {
+    //         await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
+    //         Node.Src = url;
+    //     }
+    // }
+
 
 }

@@ -7,6 +7,7 @@ open Blazor.Diagrams.Core.Geometry
 open Blazor.Diagrams.Core.Models
 open Blazor.Diagrams.Core.Models.Base
 open Microsoft.AspNetCore.Components
+open Microsoft.AspNetCore.Components.Forms
 open Microsoft.AspNetCore.Components.Web
 open Microsoft.JSInterop
 
@@ -179,7 +180,7 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
                     )
                 )
         Observable.subscribe undo.Push nodes_moved |> ignore
-        ()
+        
     
     let nodes_moved d = for KeyValue(k : NodeModel,v) in d do k.Position <- v; k.RefreshAll(); k.ReinitializePorts()
     
@@ -228,6 +229,42 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
     
     [<JSInvokable>]
     member this.OnBeforeUnload() = this.OnStore()
+    
+open FSharp.Control
+type ReactiveURLs(Js : IJSRuntime) =
+    let files = AsyncRx.subject()
+    let urls = AsyncRx.subject()
+    
+    static let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
+    
+    let uplaod (file : IBrowserFile) = (fst files).OnNextAsync file
+    
+    let files_obs =
+        (snd files)
+        |> AsyncRx.map (fun file ->
+            AsyncRx.create (fun obs -> async {
+                use dotnetImageStream = new DotNetStreamReference(file.OpenReadStream(file.Size))
+                let! url = Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, file.ContentType).AsTask() |> Async.AwaitTask
+                do! obs.OnNextAsync url
+                return AsyncDisposable.Create (fun () -> Js.InvokeVoidAsync("URL.revokeObjectURL", url).AsTask() |> Async.AwaitTask)
+            })
+        ) |> AsyncRx.switchLatest
+        
+    let is_url url =
+        let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
+        is_url && Array.exists ((=) uri.Scheme) allowed_schemas
+        
+    let clipboard_url_obs =
+        (snd urls)
+        |> AsyncRx.chooseAsync (fun () -> async {
+            let! url = Js.InvokeAsync<string>("navigator.clipboard.readText").AsTask() |> Async.AwaitTask
+            return if is_url url then Some url else None
+        })
+        
+    member val URL = AsyncRx.merge files_obs clipboard_url_obs with get
+    member _.UploadFile file = (fst files).OnNextAsync file
+    member _.CopyUrlFromClipboard() = (fst urls).OnNextAsync()
+        
             
 module Compilation =
     exception CycleException of NodeModel

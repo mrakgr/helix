@@ -99,9 +99,9 @@ type ImageNode(p : Point, Js : IJSRuntime, Http : HttpClient) as node =
     do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
     do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
     
-    member val Src : HelixUrl = HelixUrl("images/sun-big.png","image/png",Some "image:default",Js) with get, set
+    member val Src : HelixUrl = {url=HelixUrlHandle("images/sun-big.png",Js); content_type="image/png"; guid="image:default"} with get, set
     
-    member _.UploadFile (file : IBrowserFile) = task { let! helix_url = upload_file file Js in node.Src <- helix_url }
+    member _.UploadFile (file : IBrowserFile) = task { let! helix_url = upload_file Js file in node.Src <- helix_url }
     member _.CopyUrlFromClipboard() = task { let! helix_url = copy_url_from_clipboard Js Http in Option.iter (fun url -> node.Src <- url) helix_url }
     
 type DatabaseTestNode(p : Point) =

@@ -83,7 +83,7 @@
                     }
                     if (x is ImageNode imageNode)
                     {
-                        return new[] { OnCompileImage(imageNode.Src) };
+                        return new[] { OnCompileImage(imageNode.Src.URL) };
                     }
                     return new RenderFragment[] { };
                 });

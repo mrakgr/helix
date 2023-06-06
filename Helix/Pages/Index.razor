@@ -3,13 +3,12 @@
 <PageTitle>Helix</PageTitle>
 
 @using Blazor.Diagrams.Core.Geometry
-@using Helix.Components
 @using Helix.Nodes
 @using Helix.Types
-@using Microsoft.FSharp.Core
 
 @inject HelixDiagram Diagram
 @inject IJSRuntime Js
+@inject HttpClient Http
 
 <MudMenu Label="Add Node" PositionAtCursor="true" ActivationEvent="MouseEvent.RightClick"
          Style="width: 100%; height: 100%;">
@@ -20,7 +19,7 @@
     </ActivatorContent>
     <ChildContent>
         <MudMenuItem OnClick="CreateNode(x => new TextNode(x))">Text</MudMenuItem>
-        <MudMenuItem OnClick="CreateNode(x => new ImageNode(x))">Image</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(x => new ImageNode(x,Js,Http))">Image</MudMenuItem>
         <MudMenuItem OnClick="CreateNode(x => new CompilationNode(x))">Compilation</MudMenuItem>
         <MudMenuItem OnClick="CreateNode(x => new DatabaseTestNode(x))">Database Test</MudMenuItem>
     </ChildContent>

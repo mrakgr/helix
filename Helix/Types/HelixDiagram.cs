@@ -9,7 +9,7 @@ namespace Helix.Types;
 
 public class HelixDiagram : HelixDiagramBase
 {
-    public HelixDiagram(IJSRuntime js) : base(js, DiagramOptions())
+    public HelixDiagram(IJSRuntime js, HttpClient http) : base(js, http, DiagramOptions())
     {
         RegisterModelComponent<TextNode, TextComponent>();
         RegisterModelComponent<CompilationNode, CompilationComponent>();

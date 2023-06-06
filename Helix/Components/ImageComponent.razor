@@ -1,6 +1,5 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
 @using Helix.Nodes
-@using System.Reactive.Subjects
 
 @inject IJSRuntime Js;
 
@@ -45,7 +44,7 @@
          @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
     <MudStack Row="true" Justify="Justify.SpaceBetween">
-        <MudFileUpload T="IBrowserFile" FilesChanged="OnUploadFiles">
+        <MudFileUpload T="IBrowserFile" FilesChanged="Node.UploadFile">
             <ButtonTemplate>
                 <MudFab HtmlTag="label"
                         Color="Color.Secondary"
@@ -55,12 +54,12 @@
             </ButtonTemplate>
         </MudFileUpload>
         <MudButton Variant="Variant.Filled"
-                   @onclick="OnCopyFromClipBoard">
+                   @onclick="Node.CopyUrlFromClipboard">
             Copy URL From Clipboard
         </MudButton>
     </MudStack>
     <br>
-    <MudImage ObjectFit="ObjectFit.Contain" Src="@Node.Src" Class="rounded-lg image-node"/>
+    <MudImage ObjectFit="ObjectFit.Contain" Src="@Node.Src.URL" Class="rounded-lg image-node"/>
 
     @foreach (var port in Node.Ports)
     {
@@ -70,49 +69,6 @@
 </MudCard>
 
 @code {
-
-    [Parameter]
-    [EditorRequired]
+    [Parameter] [EditorRequired]
     public required ImageNode Node { get; set; }
-
-    ReactiveURLs _urls;
-
-    protected override void OnInitialized()
-    {
-        _urls = new ReactiveURLs(Js);
-        _urls.URL.SubscribeAsync()
-    }
-
-    private Task OnCopyFromClipBoard()
-    {
-        throw new NotImplementedException();
-    }
-    
-
-    // private async Task OnUploadFiles(IBrowserFile file)
-    // {
-    //     await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
-    //     using var dotnetImageStream = new DotNetStreamReference(file.OpenReadStream(file.Size));
-    //     Node.Src = await Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, file.ContentType);
-    // }
-    //
-    // static readonly string[] AllowedUriSchemas = { Uri.UriSchemeHttp, Uri.UriSchemeHttps, Uri.UriSchemeFile, Uri.UriSchemeFtp, Uri.UriSchemeFtps };
-    //
-    // bool IsUrl(string url)
-    // {
-    //     return Uri.TryCreate(url, UriKind.Absolute, out Uri? uriResult) &&
-    //            AllowedUriSchemas.Any(x => uriResult.Scheme.Equals(x));
-    // }
-    //
-    // private async Task OnCopyFromClipBoard(MouseEventArgs obj)
-    // {
-    //     var url = await Js.InvokeAsync<string>("navigator.clipboard.readText");
-    //     if (IsUrl(url))
-    //     {
-    //         await Js.InvokeVoidAsync("URL.revokeObjectURL", Node.Src);
-    //         Node.Src = url;
-    //     }
-    // }
-
-
 }

@@ -22,6 +22,11 @@
     </div>
 
     <script>
+        async function createObjectURL_FromString(imageString, type) {
+            const blob = new Blob([imageString], {type});
+            return URL.createObjectURL(blob)
+        }
+        
         async function createObjectURL_FromStream(imageStream, type) {
             const arrayBuffer = await imageStream.arrayBuffer();
             const blob = new Blob([arrayBuffer], {type});

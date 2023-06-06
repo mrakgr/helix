@@ -2,6 +2,8 @@
 
 open System
 open System.Collections.Generic
+open System.IO
+open System.Net.Http
 open Blazor.Diagrams.Core
 open Blazor.Diagrams.Core.Geometry
 open Blazor.Diagrams.Core.Models
@@ -10,6 +12,7 @@ open Microsoft.AspNetCore.Components
 open Microsoft.AspNetCore.Components.Forms
 open Microsoft.AspNetCore.Components.Web
 open Microsoft.JSInterop
+open Thoth.Json.Net
 
 type HelixPort(parent : NodeModel, alignment, isInput : bool) =
     inherit PortModel(parent, alignment, null, null)
@@ -37,13 +40,69 @@ type TextNode(p : Point) as node =
     
     member val Text = "" with get, set
     
-type ImageNode(p : Point) as node =
+module Images =
+    type HelixUrlHandle(url : string, js : IJSRuntime) =
+        member _.URL = url
+        
+        override this.Finalize() = js.InvokeVoidAsync("URL.revokeObjectURL", url) |> ignore
+        static member Encoder (x : HelixUrlHandle) = Encode.object [ "url", Encode.string x.URL ]
+        static member Decoder (js : IJSRuntime) : Decoder<HelixUrlHandle> = Decode.object <| fun get -> HelixUrlHandle(get.Required.Field "url" Decode.string,js)
+        
+    type HelixUrl =
+        {
+            url : HelixUrlHandle
+            content_type : string
+            guid : string
+        }
+        
+        static member Create url content_type = {
+            url = url
+            content_type = content_type
+            guid = $"image:{Guid.NewGuid().ToString()}"
+        }
+        
+    let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
+    let is_url url =
+        let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
+        is_url && Array.exists ((=) uri.Scheme) allowed_schemas
+        
+    let create_object_url_from_stream (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
+        use dotnetImageStream = new DotNetStreamReference(file)
+        let! url = Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, content_type)
+        return HelixUrlHandle(url, Js)
+    } 
+        
+    let upload_file' (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
+        let! url = create_object_url_from_stream Js file content_type
+        return HelixUrl.Create url content_type
+    }
+        
+    let upload_file (Js : IJSRuntime) (file : IBrowserFile) = upload_file' Js (file.OpenReadStream(file.Size)) file.ContentType 
+    
+    let copy_url_from_clipboard (Js : IJSRuntime) (http : HttpClient) = task {
+        let! url = Js.InvokeAsync<string>("navigator.clipboard.readText")
+        if is_url url then
+            let! response = http.GetAsync(url)
+            if response.IsSuccessStatusCode then
+                let! file = response.Content.ReadAsStreamAsync()
+                let! result = upload_file' Js file response.Content.Headers.ContentType.MediaType
+                return Some result
+            else return None
+        else
+            return None
+    }
+    
+open Images
+type ImageNode(p : Point, Js : IJSRuntime, Http : HttpClient) as node =
     inherit NodeModel(p)
     
     do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
     do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
     
-    member val Src = "images/sun-big.png" with get, set
+    member val Src : HelixUrl = HelixUrl("images/sun-big.png","image/png",Some "image:default",Js) with get, set
+    
+    member _.UploadFile (file : IBrowserFile) = task { let! helix_url = upload_file file Js in node.Src <- helix_url }
+    member _.CopyUrlFromClipboard() = task { let! helix_url = copy_url_from_clipboard Js Http in Option.iter (fun url -> node.Src <- url) helix_url }
     
 type DatabaseTestNode(p : Point) =
     inherit NodeModel(p)
@@ -60,10 +119,14 @@ module Utils =
         let to_canvas_point (x,y) = d.GetRelativeMousePoint(x,y)
         d.Nodes.Add(node_constructor.Invoke(to_canvas_point(ev.ClientX, ev.ClientY)))
         
+module LocalForage =
+    let get (js : IJSRuntime) (k : string) = js.InvokeAsync<string>("localforage.getItem", k);   
+    let set (js : IJSRuntime) (k : string) (v : string) = js.InvokeVoidAsync("localforage.setItem", k, v)
+    
 module StoreLoad =
     type StoredNodes =
         | S_TextNode of string
-        | S_ImageNode of string
+        | S_ImageNode of url: string * content_type: string * guid: string
         | S_CompilationNode
         | S_DatabaseTestNode
         
@@ -83,16 +146,21 @@ module StoreLoad =
             )
         d_ports_from, d_ports_to
     
-    let store (diagram : Diagram) =
+    let to_tuple (p : Point) = p.X, p.Y
+    let store (diagram : Diagram) js http = task {
         let d_ports_from, d_ports_to = diagram_ids diagram.Nodes
+        let nodes = diagram.Nodes |> Seq.toArray
         
-        let to_tuple (p : Point) = p.X, p.Y
+        let image_url_guids =
+            nodes|> Array.choose (function
+                | :? ImageNode as n -> Some (n.Src.URL, n.Src.GUID)
+                | _ -> None
+                )
+            
         let nodes =
-            diagram.Nodes
-            |> Seq.toArray
-            |> Array.map (function
+            nodes |> Array.map (function
                 | :? TextNode as n -> S_TextNode n.Text, to_tuple n.Position
-                | :? ImageNode as n -> S_ImageNode n.Src, to_tuple n.Position
+                | :? ImageNode as n -> S_ImageNode (n.Src.URL, n.Src.ContentType, n.Src.GUID), to_tuple n.Position
                 | :? CompilationNode as n -> S_CompilationNode, to_tuple n.Position
                 | :? DatabaseTestNode as n -> S_DatabaseTestNode, to_tuple n.Position
                 | n -> failwithf $"Type not supported: {n.GetType()}"  
@@ -107,17 +175,43 @@ module StoreLoad =
                 )
             |> fun (x : LinkT []) -> Thoth.Json.Net.Encode.Auto.toString x
             
-        nodes, links
+        let save_image_urls_to_indexeddb (js : IJSRuntime) (http : HttpClient) (image_url_guids : (string * string)[]) = task {
+            for url,guid in image_url_guids do
+                let! data = http.GetAsync(url)
+                let! text = data.EnsureSuccessStatusCode().Content.ReadAsStringAsync()
+                do! LocalForage.set js guid text
+        }
         
-    let load (d : Diagram) (nodes : string) (links : string) =
+        do! LocalForage.set js "diagram_nodes" nodes
+        do! LocalForage.set js "diagram_links" links
+        do! save_image_urls_to_indexeddb js http image_url_guids
+    }
+       
+    let load (d : Diagram) (js : IJSRuntime) (http : HttpClient) = task {
         d.Nodes.Clear()
         d.Links.Clear()
         
+        let load_images_from_indexeddb (js : IJSRuntime) (nodes : NodeT []) = task {
+            let ar = ResizeArray(nodes.Length)
+            for node,p in nodes do
+                match node with
+                | S_ImageNode (url, content_type, guid) -> 
+                    let! data = LocalForage.get js guid
+                    let! url = js.InvokeAsync<string>("createObjectURL_FromString", data, content_type)
+                    ar.Add(S_ImageNode (url, content_type, guid), p)
+                | _ ->
+                    ar.Add(node, p)
+            return ar.ToArray()
+        }
+        
+        let! nodes = LocalForage.get js "diagram_nodes"
+        let! links = LocalForage.get js "diagram_links"
+        let! nodes = load_images_from_indexeddb js (Thoth.Json.Net.Decode.Auto.unsafeFromString nodes)
+        
         let nodes =
-            (Thoth.Json.Net.Decode.Auto.unsafeFromString nodes : NodeT [])
-            |> Array.map (function
-                | S_TextNode s, p -> TextNode(Point p, Text=s) : NodeModel
-                | S_ImageNode s, p -> ImageNode(Point p, Src=s)
+            nodes |> Array.map (function
+                | S_TextNode s, p -> TextNode(Point p, Text=s) :> NodeModel
+                | S_ImageNode(url,content_type,guid), p -> ImageNode(Point p, js, http, Src=HelixUrl(url,content_type,Some guid,js))
                 | S_CompilationNode, p -> CompilationNode(Point p)
                 | S_DatabaseTestNode, p -> DatabaseTestNode(Point p) 
                 )
@@ -130,6 +224,7 @@ module StoreLoad =
                 LinkModel(d_ports_to[source],d_ports_to[target]) :> BaseLinkModel
                 )
         d.Nodes.Add nodes; d.Links.Add links
+    }
         
 type UndoBufferActions =
     | U_NodeAdded of NodeModel
@@ -139,7 +234,7 @@ type UndoBufferActions =
     | U_NodesMoved of start: Dictionary<NodeModel,Point> * ``end``: Dictionary<NodeModel,Point>
         
 open FSharp.Control.Reactive
-type HelixDiagramBase(Js : IJSRuntime, opts) as this =
+type HelixDiagramBase(js : IJSRuntime, http : HttpClient, opts) as this =
     inherit Diagram(opts)
     
     let redo = Stack()
@@ -170,6 +265,7 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             System.Reactive.Linq.Observable.FromEvent<_>(g add, g remove)
         let mouse_down = fromEvent this.add_MouseDown this.remove_MouseDown
         let mouse_up = fromEvent this.add_MouseUp this.remove_MouseUp
+        
         let nodes_moved : UndoBufferActions IObservable =
             mouse_down |> Observable.switchMap (fun _ ->
                 let nodes_movement_start = this.Nodes |> Seq.choose (fun x -> if x.Selected then Some (KeyValuePair(x, x.Position)) else None) |> Dictionary
@@ -212,60 +308,20 @@ type HelixDiagramBase(Js : IJSRuntime, opts) as this =
             
     member this.OnLoad() = task {
         if not is_loaded then
-            do! Js.InvokeVoidAsync("registerUnloadEvent", DotNetObjectReference.Create(this));            
+            do! js.InvokeVoidAsync("registerUnloadEvent", DotNetObjectReference.Create(this));            
             is_loaded <- true
-        
-        let! nodes = Js.InvokeAsync<string>("localforage.getItem", "diagram_nodes")
-        let! links = Js.InvokeAsync<string>("localforage.getItem", "diagram_links") 
-        StoreLoad.load this nodes links
+
+        do! StoreLoad.load this js http
     }
     
     member this.OnStore() = task {
         if is_loaded then
-            let (nodes, links) = StoreLoad.store this
-            do! Js.InvokeVoidAsync("localforage.setItem", "diagram_nodes", nodes);
-            do! Js.InvokeVoidAsync("localforage.setItem", "diagram_links", links);
+            do! StoreLoad.store this js http
     }
     
     [<JSInvokable>]
     member this.OnBeforeUnload() = this.OnStore()
     
-open FSharp.Control
-type ReactiveURLs(Js : IJSRuntime) =
-    let files = AsyncRx.subject()
-    let urls = AsyncRx.subject()
-    
-    static let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
-    
-    let uplaod (file : IBrowserFile) = (fst files).OnNextAsync file
-    
-    let files_obs =
-        (snd files)
-        |> AsyncRx.map (fun file ->
-            AsyncRx.create (fun obs -> async {
-                use dotnetImageStream = new DotNetStreamReference(file.OpenReadStream(file.Size))
-                let! url = Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, file.ContentType).AsTask() |> Async.AwaitTask
-                do! obs.OnNextAsync url
-                return AsyncDisposable.Create (fun () -> Js.InvokeVoidAsync("URL.revokeObjectURL", url).AsTask() |> Async.AwaitTask)
-            })
-        ) |> AsyncRx.switchLatest
-        
-    let is_url url =
-        let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
-        is_url && Array.exists ((=) uri.Scheme) allowed_schemas
-        
-    let clipboard_url_obs =
-        (snd urls)
-        |> AsyncRx.chooseAsync (fun () -> async {
-            let! url = Js.InvokeAsync<string>("navigator.clipboard.readText").AsTask() |> Async.AwaitTask
-            return if is_url url then Some url else None
-        })
-        
-    member val URL = AsyncRx.merge files_obs clipboard_url_obs with get
-    member _.UploadFile file = (fst files).OnNextAsync file
-    member _.CopyUrlFromClipboard() = (fst urls).OnNextAsync()
-        
-            
 module Compilation =
     exception CycleException of NodeModel
     

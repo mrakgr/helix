@@ -6,9 +6,12 @@
 <MudCard Class="pa-8"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
-    <MudStack Row="true">
-        <MudButton @onclick="Diagram.OnStore">Store Database</MudButton>
-        <MudButton @onclick="Diagram.OnLoad">Load Database</MudButton>
+    <MudStack>
+        <MudStack Row="true">
+            <MudButton @onclick="Diagram.OnStore">Store Database</MudButton>
+            <MudButton @onclick="Diagram.OnLoad">Load Database</MudButton>
+        </MudStack>
+        <MudButton @onclick="OnGC_Collect">GC.Collect</MudButton>
     </MudStack>
 </MudCard>
 
@@ -18,9 +21,9 @@
     [EditorRequired]
     public required DatabaseTestNode Node { get; set; }
 
-    public void Qwe()
+    private void OnGC_Collect()
     {
-        var f = (KeyboardEventArgs x) => { };
-        Diagram.KeyDown -= f;
+        GC.Collect();
     }
+
 }

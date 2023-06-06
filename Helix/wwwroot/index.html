@@ -22,21 +22,22 @@
     </div>
 
     <script>
-        async function createObjectURL_FromString(imageString, type) {
-            const blob = new Blob([imageString], {type});
+        function createObjectURL(imageArray, type) {
+            const blob = new Blob([imageArray], {type});
             return URL.createObjectURL(blob)
         }
         
         async function createObjectURL_FromStream(imageStream, type) {
             const arrayBuffer = await imageStream.arrayBuffer();
-            const blob = new Blob([arrayBuffer], {type});
-            return URL.createObjectURL(blob)
+            return createObjectURL(arrayBuffer,type)
         }
         
         function registerUnloadEvent(component) {
-            window.addEventListener("beforeunload", function () {
-                component.invokeMethodAsync('OnBeforeUnload');
-            })
+            const f = function () {
+                return component.invokeMethodAsync('OnBeforeUnload');
+            }
+            
+            window.addEventListener("beforeunload", f)
         }
         
         document.onkeydown = function (e) {

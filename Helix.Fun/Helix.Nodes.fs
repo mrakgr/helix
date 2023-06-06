@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Net.Http
+open System.Threading.Tasks
 open Blazor.Diagrams.Core
 open Blazor.Diagrams.Core.Geometry
 open Blazor.Diagrams.Core.Models
@@ -45,21 +46,17 @@ module Images =
         member _.URL = url
         
         override this.Finalize() = js.InvokeVoidAsync("URL.revokeObjectURL", url) |> ignore
-        static member Encoder (x : HelixUrlHandle) = Encode.object [ "url", Encode.string x.URL ]
-        static member Decoder (js : IJSRuntime) : Decoder<HelixUrlHandle> = Decode.object <| fun get -> HelixUrlHandle(get.Required.Field "url" Decode.string,js)
         
-    type HelixUrl =
+    type HelixUrlInfo =    
         {
-            url : HelixUrlHandle
             content_type : string
             guid : string
         }
         
-        static member Create url content_type = {
-            url = url
-            content_type = content_type
-            guid = $"image:{Guid.NewGuid().ToString()}"
-        }
+    type HelixUrl =
+        | HelixUrl of HelixUrlHandle * HelixUrlInfo
+        
+        static member Create (url : HelixUrlHandle) content_type = HelixUrl (url, { content_type = content_type; guid = $"image:{Guid.NewGuid().ToString()}" })
         
     let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
     let is_url url =
@@ -99,7 +96,7 @@ type ImageNode(p : Point, Js : IJSRuntime, Http : HttpClient) as node =
     do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
     do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
     
-    member val Src : HelixUrl = {url=HelixUrlHandle("images/sun-big.png",Js); content_type="image/png"; guid="image:default"} with get, set
+    member val Src : HelixUrl = HelixUrl(HelixUrlHandle("images/sun-big.png",Js), { content_type="image/png"; guid="image:default"}) with get, set
     
     member _.UploadFile (file : IBrowserFile) = task { let! helix_url = upload_file Js file in node.Src <- helix_url }
     member _.CopyUrlFromClipboard() = task { let! helix_url = copy_url_from_clipboard Js Http in Option.iter (fun url -> node.Src <- url) helix_url }
@@ -120,13 +117,13 @@ module Utils =
         d.Nodes.Add(node_constructor.Invoke(to_canvas_point(ev.ClientX, ev.ClientY)))
         
 module LocalForage =
-    let get (js : IJSRuntime) (k : string) = js.InvokeAsync<string>("localforage.getItem", k);   
-    let set (js : IJSRuntime) (k : string) (v : string) = js.InvokeVoidAsync("localforage.setItem", k, v)
+    let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localforage.getItem", k)
+    let set (js : IJSRuntime) (k : string) v = js.InvokeVoidAsync("localforage.setItem", k, v)
     
 module StoreLoad =
     type StoredNodes =
         | S_TextNode of string
-        | S_ImageNode of url: string * content_type: string * guid: string
+        | S_ImageNode of HelixUrlInfo
         | S_CompilationNode
         | S_DatabaseTestNode
         
@@ -146,26 +143,38 @@ module StoreLoad =
             )
         d_ports_from, d_ports_to
     
+    let save_image_urls_to_indexeddb (js : IJSRuntime) (http : HttpClient) (urls : HelixUrl[]) =
+        urls |> Array.map (fun (HelixUrl(handle,info)) -> task {
+                let! data = http.GetAsync handle.URL
+                let! text = data.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync()
+                do! LocalForage.set js info.guid text
+            }) |> Task.WhenAll
+        
+            
     let to_tuple (p : Point) = p.X, p.Y
     let store (diagram : Diagram) js http = task {
         let d_ports_from, d_ports_to = diagram_ids diagram.Nodes
         let nodes = diagram.Nodes |> Seq.toArray
         
-        let image_url_guids =
-            nodes|> Array.choose (function
-                | :? ImageNode as n -> Some (n.Src.URL, n.Src.GUID)
+        let store_task () =
+            nodes |> Array.choose (function
+                | :? ImageNode as n -> Some n.Src
                 | _ -> None
                 )
+            |> save_image_urls_to_indexeddb js http
             
         let nodes =
-            nodes |> Array.map (function
-                | :? TextNode as n -> S_TextNode n.Text, to_tuple n.Position
-                | :? ImageNode as n -> S_ImageNode (n.Src.URL, n.Src.ContentType, n.Src.GUID), to_tuple n.Position
-                | :? CompilationNode as n -> S_CompilationNode, to_tuple n.Position
-                | :? DatabaseTestNode as n -> S_DatabaseTestNode, to_tuple n.Position
-                | n -> failwithf $"Type not supported: {n.GetType()}"  
+            nodes |> Array.map (fun n ->
+                let p = to_tuple n.Position
+                let n = match n with
+                        | :? TextNode as n -> S_TextNode n.Text
+                        | :? ImageNode as n -> S_ImageNode (match n.Src with HelixUrl(_,info) -> info)
+                        | :? CompilationNode as n -> S_CompilationNode
+                        | :? DatabaseTestNode as n -> S_DatabaseTestNode
+                        | n -> failwithf $"Type not supported: {n.GetType()}"
+                n, p
                 )
-            |> fun (x : NodeT []) -> Thoth.Json.Net.Encode.Auto.toString x
+            |> fun (x : NodeT []) -> Encode.Auto.toString x
         
         let links =
             diagram.Links
@@ -175,43 +184,41 @@ module StoreLoad =
                 )
             |> fun (x : LinkT []) -> Thoth.Json.Net.Encode.Auto.toString x
             
-        let save_image_urls_to_indexeddb (js : IJSRuntime) (http : HttpClient) (image_url_guids : (string * string)[]) = task {
-            for url,guid in image_url_guids do
-                let! data = http.GetAsync(url)
-                let! text = data.EnsureSuccessStatusCode().Content.ReadAsStringAsync()
-                do! LocalForage.set js guid text
-        }
-        
+        let! _ = store_task ()
         do! LocalForage.set js "diagram_nodes" nodes
         do! LocalForage.set js "diagram_links" links
-        do! save_image_urls_to_indexeddb js http image_url_guids
     }
        
+    let load_images_from_indexeddb (js : IJSRuntime) (infos : HelixUrlInfo []) =
+        infos |> Array.map (fun info -> task {
+            let! (data : byte []) = LocalForage.get js info.guid
+            let! url = js.InvokeAsync<string>("createObjectURL", data, info.content_type)
+            return HelixUrl(HelixUrlHandle(url, js), info)
+        }) |> Task.WhenAll
+    
     let load (d : Diagram) (js : IJSRuntime) (http : HttpClient) = task {
         d.Nodes.Clear()
         d.Links.Clear()
         
-        let load_images_from_indexeddb (js : IJSRuntime) (nodes : NodeT []) = task {
-            let ar = ResizeArray(nodes.Length)
-            for node,p in nodes do
-                match node with
-                | S_ImageNode (url, content_type, guid) -> 
-                    let! data = LocalForage.get js guid
-                    let! url = js.InvokeAsync<string>("createObjectURL_FromString", data, content_type)
-                    ar.Add(S_ImageNode (url, content_type, guid), p)
-                | _ ->
-                    ar.Add(node, p)
-            return ar.ToArray()
-        }
-        
+        let decode nodes = 
+            if nodes = null then [||]
+            else Decode.Auto.unsafeFromString nodes
         let! nodes = LocalForage.get js "diagram_nodes"
         let! links = LocalForage.get js "diagram_links"
-        let! nodes = load_images_from_indexeddb js (Thoth.Json.Net.Decode.Auto.unsafeFromString nodes)
+        let nodes : NodeT [] = decode nodes
+        
+        let! urls =
+            nodes |> Array.choose (function
+                | S_ImageNode info, _ -> Some info
+                | _ -> None)
+            |> load_images_from_indexeddb js
         
         let nodes =
+            let mutable i = 0
+            let get_i() = let x = i in i <- i+1; x
             nodes |> Array.map (function
                 | S_TextNode s, p -> TextNode(Point p, Text=s) :> NodeModel
-                | S_ImageNode(url,content_type,guid), p -> ImageNode(Point p, js, http, Src=HelixUrl(url,content_type,Some guid,js))
+                | S_ImageNode info, p -> ImageNode(Point p, js, http, Src=urls[get_i()])
                 | S_CompilationNode, p -> CompilationNode(Point p)
                 | S_DatabaseTestNode, p -> DatabaseTestNode(Point p) 
                 )
@@ -219,7 +226,7 @@ module StoreLoad =
         let d_ports_from, d_ports_to = diagram_ids nodes
         
         let links =
-            (Thoth.Json.Net.Decode.Auto.unsafeFromString links : LinkT [])
+            (decode links : LinkT [])
             |> Array.map (fun (source, target) ->
                 LinkModel(d_ports_to[source],d_ports_to[target]) :> BaseLinkModel
                 )

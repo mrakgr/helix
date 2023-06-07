@@ -15,6 +15,62 @@ open Microsoft.AspNetCore.Components.Web
 open Microsoft.JSInterop
 open Thoth.Json.Net
 
+module LocalForage =
+    let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localforage.getItem", k)
+    let set (js : IJSRuntime) (k : string) v = js.InvokeVoidAsync("localforage.setItem", k, v)
+    let remove (js : IJSRuntime) (k : string) = js.InvokeVoidAsync("localforage.removeItem", k)
+    let clear (js : IJSRuntime) = js.InvokeVoidAsync("localforage.clear")
+    let length (js : IJSRuntime) = js.InvokeAsync<int>("localforage.length")
+    let keys (js : IJSRuntime) = js.InvokeAsync<string []>("localforage.keys")
+    
+type MediaPoolBase() =
+    let rng = Random()
+    
+    member val HashSet : int HashSet = HashSet() with get, set
+    member this.GetNewId() =
+        let id = rng.Next(Int32.MinValue,Int32.MaxValue)
+        if this.HashSet.Add id then id
+        else this.GetNewId()
+        
+    member this.AddExistingId id =
+        if this.HashSet.Add id = false then failwith "The existing id collides with the one in the set already."
+        
+type MediaPool<'t>(prefix : string, js : IJSRuntime) =
+    inherit MediaPoolBase()
+    
+    let separator = ':'
+    
+    let id_to_key id = $"%s{prefix}%c{separator}%i{id}"
+    let key_to_id (key : string) =
+        match key.Split separator with
+        | [|a;b|] when a = prefix -> Int32.Parse b
+        | _ -> failwith $"Expected a key with the prefix: %s{prefix}\nGot: %s{key}"
+    
+    member pool.Initialize() = task {
+        let! keys = LocalForage.keys js
+        keys
+        |> Array.filter (fun k -> k.StartsWith prefix)
+        |> Array.iter (key_to_id >> pool.AddExistingId)
+    }
+    
+    
+    member pool.CleanUp' (used : int seq) = task {
+        let all = pool.HashSet
+        let used = HashSet(used)
+        all.ExceptWith used
+        for id in all do
+            do! LocalForage.remove js (id_to_key id)
+        pool.HashSet <- used
+    }
+        
+    member pool.CleanUp used = pool.CleanUp' (Seq.map key_to_id used)
+    
+    member pool.Get id : 't ValueTask = LocalForage.get js (id_to_key id)
+    member pool.Set(id,v : 't) = LocalForage.set js (id_to_key id) v
+    
+type TextPool(js) = inherit MediaPool<string>("text",js)
+type ImagePool(js) = inherit MediaPool<byte []>("image",js)
+
 type HelixPort(parent : NodeModel, alignment, isInput : bool) =
     inherit PortModel(parent, alignment, null, null)
     
@@ -33,13 +89,19 @@ type HelixPort(parent : NodeModel, alignment, isInput : bool) =
             // && (is_input_port_empty this -1 || is_input_port_empty cp 0)
         | _ -> false
 
-type TextNode(p : Point) as node =
+type TextNode(p : Point, text_pool : TextPool) as node =
     inherit NodeModel(p)
     
+    let id = text_pool.GetNewId()
     do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
     do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
     
-    member val Text = "" with get, set
+    let mutable text = ""
+    member _.Text = text
+    member _.OnChange text' = task {
+        text <- text'
+        return! text_pool.Set(id,text')
+    }
     
 module Images =
     type HelixUrlHandle(url : string, js : IJSRuntime) =
@@ -67,7 +129,7 @@ module Images =
         use dotnetImageStream = new DotNetStreamReference(file)
         let! url = Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, content_type)
         return HelixUrlHandle(url, Js)
-    } 
+    }
         
     let upload_file' (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
         let! url = create_object_url_from_stream Js file content_type
@@ -115,11 +177,7 @@ module Utils =
     let add_node (d : Diagram, node_constructor : Func<Point, NodeModel>) (ev : MouseEventArgs) =
         let to_canvas_point (x,y) = d.GetRelativeMousePoint(x,y)
         d.Nodes.Add(node_constructor.Invoke(to_canvas_point(ev.ClientX, ev.ClientY)))
-        
-module LocalForage =
-    let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localforage.getItem", k)
-    let set (js : IJSRuntime) (k : string) v = js.InvokeVoidAsync("localforage.setItem", k, v)
-    
+   
 module StoreLoad =
     type StoredNodes =
         | S_TextNode of string
@@ -146,6 +204,7 @@ module StoreLoad =
     let save_image_urls_to_indexeddb (js : IJSRuntime) (http : HttpClient) (urls : HelixUrl[]) =
         urls |> Array.map (fun (HelixUrl(handle,info)) -> task {
                 let! data = http.GetAsync handle.URL
+                printfn "Status code: %A" data.StatusCode
                 let! text = data.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync()
                 do! LocalForage.set js info.guid text
             }) |> Task.WhenAll
@@ -184,9 +243,12 @@ module StoreLoad =
                 )
             |> fun (x : LinkT []) -> Thoth.Json.Net.Encode.Auto.toString x
             
+        printfn "Starting the store of images."
         let! _ = store_task ()
+        printfn "Stored the images."
         do! LocalForage.set js "diagram_nodes" nodes
         do! LocalForage.set js "diagram_links" links
+        printfn "Stored the diagram nodes and links."
     }
        
     let load_images_from_indexeddb (js : IJSRuntime) (infos : HelixUrlInfo []) =
@@ -321,13 +383,17 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, opts) as this =
         do! StoreLoad.load this js http
     }
     
+    [<JSInvokable>]
     member this.OnStore() = task {
         if is_loaded then
             do! StoreLoad.store this js http
     }
     
     [<JSInvokable>]
-    member this.OnBeforeUnload() = this.OnStore()
+    member this.OnVisibilityChangeHidden() = task {
+        do! js.InvokeVoidAsync("localStorage.setItem", "Hello", "World")
+        do! LocalForage.set js "Hello" "World."
+    }
     
 module Compilation =
     exception CycleException of NodeModel

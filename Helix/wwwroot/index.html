@@ -31,13 +31,19 @@
             const arrayBuffer = await imageStream.arrayBuffer();
             return createObjectURL(arrayBuffer,type)
         }
+
+        function sleep(miliseconds) {
+            var currentTime = new Date().getTime();
+            while (currentTime + miliseconds >= new Date().getTime()) {
+            }
+        }
         
         function registerUnloadEvent(component) {
-            const f = function () {
-                return component.invokeMethodAsync('OnBeforeUnload');
-            }
-            
-            window.addEventListener("beforeunload", f)
+            document.addEventListener("visibilitychange", async () => {
+                if (document.visibilityState === "hidden") {
+                    await component.invokeMethodAsync('OnVisibilityChangeHidden');
+                }
+            })
         }
         
         document.onkeydown = function (e) {

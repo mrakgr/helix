@@ -73,11 +73,7 @@ module Link =
             member this.Set v = (LocalForage.set js (id_to_key id) v).AsTask()
             }
     
-open Data
-
 module Nodes =
-    open Data
-    
     type HelixPort(parent : NodeModel, alignment, isInput : bool) =
         inherit PortModel(parent, alignment, null, null)
         
@@ -85,7 +81,7 @@ module Nodes =
 
         override this.CanAttachTo(port) =
             // This offset is because `this` already has a link by the time this function gets called.
-            let is_input_port_empty (a : HelixPort) by = a.IsInput && a.Links.Count + by = 0 
+            let _is_input_port_empty (a : HelixPort) by = a.IsInput && a.Links.Count + by = 0 
             match port with
             | :? HelixPort as cp ->
                 // Checks for same-node/port attachements.
@@ -140,7 +136,7 @@ module Nodes =
             
             member this.Url =
                 match this with
-                | HelixDirectUrl(s, contentType) -> s
+                | HelixDirectUrl(s, _) -> s
                 | HelixBlobUrl helixUrlHandle -> helixUrlHandle.URL
             
             member this.ContentType =
@@ -156,7 +152,7 @@ module Nodes =
         let stream_to_byte_array (file : Stream) = task {
             let len = Convert.ToInt32 file.Length
             let ar = Array.zeroCreate len
-            let! bytes_read = file.ReadAsync(ar,0,len)
+            let! _bytes_read = file.ReadAsync(ar,0,len)
             return ar
         }
             
@@ -192,7 +188,7 @@ module Nodes =
         }
         
     open Images
-    type ImageNode(p : Point, db : (byte []) HelixDbLink, content_type, js) as node =
+    type ImageNode(p : Point, db : byte [] HelixDbLink, content_type, js) as node =
         inherit HelixNode(p)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
@@ -200,7 +196,7 @@ module Nodes =
         
         member val Src : HelixUrl = HelixDirectUrl("images/sun-big.png", "image/png") with get, set
         
-        member _.UploadFile js http (file : IBrowserFile) : Task = task { let! helix_url = upload_file js file in do! node.OnChange helix_url }
+        member _.UploadFile js _http (file : IBrowserFile) : Task = task { let! helix_url = upload_file js file in do! node.OnChange helix_url }
         member _.CopyUrlFromClipboard js http : Task = task {
             let! helix_url = copy_url_from_clipboard js http
             match helix_url with
@@ -278,8 +274,8 @@ module StoreLoad =
         d_ports_from, d_ports_to
             
     let to_tuple (p : Point) = p.X, p.Y
-    let store (diagram : Diagram) js http = task {
-        let d_ports_from, d_ports_to = diagram_ids diagram.Nodes
+    let store (diagram : Diagram) js _http = task {
+        let d_ports_from, _ = diagram_ids diagram.Nodes
         let nodes = diagram.Nodes |> Seq.toArray
         
         let nodes =
@@ -292,7 +288,7 @@ module StoreLoad =
             |> Array.map (fun x ->
                 d_ports_from[x.SourcePort], d_ports_from[x.TargetPort]
                 )
-            |> fun (x : LinkT []) -> Thoth.Json.Net.Encode.Auto.toString x
+            |> fun (x : LinkT []) -> Encode.Auto.toString x
             
         do! LocalStorage.set js "diagram_nodes" nodes
         do! LocalStorage.set js "diagram_links" links
@@ -327,7 +323,7 @@ module StoreLoad =
                 | S_DatabaseTestNode, p -> DatabaseTestNode.Create (Point p)
                 ) |> Task.WhenAll
             
-        let d_ports_from, d_ports_to = diagram_ids nodes
+        let _, d_ports_to = diagram_ids nodes
         
         let links =
             (decode links : LinkT [])
@@ -401,7 +397,7 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) a
             | U_NodeRemoved x -> this.Nodes.Add x
             | U_LinkAdded x -> this.Links.Remove x
             | U_LinkRemoved x -> this.Links.Add x
-            | U_NodesMoved(start, ``end``) -> nodes_moved start
+            | U_NodesMoved(start, _) -> nodes_moved start
             is_handler_active <- true
             
     member this.Redo() =
@@ -414,7 +410,7 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) a
             | U_NodeRemoved x -> this.Nodes.Remove x
             | U_LinkAdded x -> this.Links.Add x
             | U_LinkRemoved x -> this.Links.Remove x
-            | U_NodesMoved(start, ``end``) -> nodes_moved ``end``
+            | U_NodesMoved(_, ``end``) -> nodes_moved ``end``
             is_handler_active <- true
             
     member this.OnLoad() = task {

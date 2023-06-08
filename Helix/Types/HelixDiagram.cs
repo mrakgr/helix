@@ -1,15 +1,16 @@
 ﻿using System.Runtime.CompilerServices;
 using Blazor.Diagrams.Core;
 using Helix.Components;
-using Helix.Nodes;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+
+using static Helix.Nodes;
 
 namespace Helix.Types;
 
 public class HelixDiagram : HelixDiagramBase
 {
-    public HelixDiagram(IJSRuntime js, HttpClient http) : base(js, http, DiagramOptions())
+    public HelixDiagram(IJSRuntime js, HttpClient http, Data.MediaPool m) : base(js, http, m, DiagramOptions())
     {
         RegisterModelComponent<TextNode, TextComponent>();
         RegisterModelComponent<CompilationNode, CompilationComponent>();

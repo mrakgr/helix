@@ -1,5 +1,4 @@
-﻿@using Helix.Nodes
-@using Helix.Types
+﻿@using Helix.Types
 
 @inject HelixDiagram Diagram
 
@@ -19,7 +18,7 @@
 
     [Parameter]
     [EditorRequired]
-    public required DatabaseTestNode Node { get; set; }
+    public required Nodes.DatabaseTestNode Node { get; set; }
 
     private void OnGC_Collect()
     {

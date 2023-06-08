@@ -1,5 +1,5 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
-@using Helix.Nodes
+@using Microsoft.AspNetCore.Components
 
 <style>
     .custom-node {
@@ -44,7 +44,8 @@
                   Class="helix-text-component"
                   DisableUnderLine="true"
                   Variant="Variant.Outlined" Lines="5"
-                  @bind-Value="@Node.Text"
+                  Value="@Node.Text"
+                  ValueChanged="ev => Node.OnChange(ev)"
                   @onmousedown:stopPropagation @onmousemove:stopPropagation @onmouseup:stopPropagation
                   @onwheel:stopPropagation/>
     @foreach (var port in Node.Ports)
@@ -56,5 +57,5 @@
 
 @code {
     [Parameter] [EditorRequired]
-    public required TextNode Node { get; set; }
+    public required Nodes.TextNode Node { get; set; }
 }

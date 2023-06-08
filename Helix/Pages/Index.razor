@@ -3,12 +3,13 @@
 <PageTitle>Helix</PageTitle>
 
 @using Blazor.Diagrams.Core.Geometry
-@using Helix.Nodes
 @using Helix.Types
+@using static Helix.Nodes
 
 @inject HelixDiagram Diagram
 @inject IJSRuntime Js
 @inject HttpClient Http
+@inject Data.MediaPool MediaPool
 
 <MudMenu Label="Add Node" PositionAtCursor="true" ActivationEvent="MouseEvent.RightClick"
          Style="width: 100%; height: 100%;">
@@ -18,10 +19,10 @@
         </CascadingValue>
     </ActivatorContent>
     <ChildContent>
-        <MudMenuItem OnClick="CreateNode(x => new TextNode(x))">Text</MudMenuItem>
-        <MudMenuItem OnClick="CreateNode(x => new ImageNode(x,Js,Http))">Image</MudMenuItem>
-        <MudMenuItem OnClick="CreateNode(x => new CompilationNode(x))">Compilation</MudMenuItem>
-        <MudMenuItem OnClick="CreateNode(x => new DatabaseTestNode(x))">Database Test</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(p => TextNode.Create(p,MediaPool.GetLink<string>(),Js))">Text</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(p => ImageNode.Default(p,MediaPool.GetLink<byte[]>(),Js))">Image</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(CompilationNode.Create)">Compilation</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(DatabaseTestNode.Create)">Database Test</MudMenuItem>
     </ChildContent>
 </MudMenu>
 
@@ -31,9 +32,6 @@
         await Diagram.OnLoad();
     }
 
-    private Action<MouseEventArgs> CreateNode(Func<Point, NodeModel> f) => ev =>
-    {
-        Utils.add_node(Diagram, f, ev);
-    };
+    private Func<MouseEventArgs, Task> CreateNode(Func<Point, Task<NodeModel>> f) => ev => Utils.add_node(Diagram, f, ev);
 
 }

@@ -1,7 +1,7 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
-@using Helix.Nodes
 
 @inject IJSRuntime Js;
+@inject HttpClient Http;
 
 <style>
     .custom-node {
@@ -44,7 +44,7 @@
          @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
     <MudStack Row="true" Justify="Justify.SpaceBetween">
-        <MudFileUpload T="IBrowserFile" FilesChanged="Node.UploadFile">
+        <MudFileUpload T="IBrowserFile" FilesChanged="file => Node.UploadFile(Js,Http,file)">
             <ButtonTemplate>
                 <MudFab HtmlTag="label"
                         Color="Color.Secondary"
@@ -54,12 +54,12 @@
             </ButtonTemplate>
         </MudFileUpload>
         <MudButton Variant="Variant.Filled"
-                   @onclick="Node.CopyUrlFromClipboard">
+                   @onclick="() => Node.CopyUrlFromClipboard(Js, Http)">
             Copy URL From Clipboard
         </MudButton>
     </MudStack>
     <br>
-    <MudImage ObjectFit="ObjectFit.Contain" Src="@Node.Src.Item1.URL" Class="rounded-lg image-node"/>
+    <MudImage ObjectFit="ObjectFit.Contain" Src="@Node.Src.Url" Class="rounded-lg image-node"/>
 
     @foreach (var port in Node.Ports)
     {
@@ -70,5 +70,5 @@
 
 @code {
     [Parameter] [EditorRequired]
-    public required ImageNode Node { get; set; }
+    public required Nodes.ImageNode Node { get; set; }
 }

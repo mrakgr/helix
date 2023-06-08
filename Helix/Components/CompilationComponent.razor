@@ -1,6 +1,6 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
-@using Helix.Nodes
 @using Helix.Types
+@using static Helix.Nodes
 
 <style>
     .custom-node {
@@ -83,7 +83,7 @@
                     }
                     if (x is ImageNode imageNode)
                     {
-                        return new[] { OnCompileImage(imageNode.Src.Item1.URL) };
+                        return new[] { OnCompileImage(imageNode.Src.Url) };
                     }
                     return new RenderFragment[] { };
                 });

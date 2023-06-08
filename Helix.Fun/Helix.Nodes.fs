@@ -1,4 +1,4 @@
-﻿namespace Helix.Nodes
+﻿namespace Helix
 
 open System
 open System.Collections.Generic
@@ -23,172 +23,248 @@ module LocalForage =
     let length (js : IJSRuntime) = js.InvokeAsync<int>("localforage.length")
     let keys (js : IJSRuntime) = js.InvokeAsync<string []>("localforage.keys")
     
-type MediaPoolBase() =
-    let rng = Random()
+module Data =
+    type [<Struct>] IndexDbLink<'t> = IndexDbLink of int
+    type HelixDbNode =
+     | S_TextNode of db: IndexDbLink<string>
+     | S_ImageNode of db: IndexDbLink<byte []> * content_type: string
+     | S_CompilationNode
+     | S_DatabaseTestNode
+     
+     type HelixDbLink<'t> =
+         abstract member DbLink : 't IndexDbLink
+         abstract member Get : 't option Task
+         abstract member Set : 't -> Task
+         
+    let id_to_key (x : int) = string x
+    let key_to_id (x : string) = Int32.Parse x
+    type MediaPool() =
+        let rng = Random()
+        let set = HashSet()
     
-    member val HashSet : int HashSet = HashSet() with get, set
-    member this.GetNewId() =
-        let id = rng.Next(Int32.MinValue,Int32.MaxValue)
-        if this.HashSet.Add id then id
-        else this.GetNewId()
-        
-    member this.AddExistingId id =
-        if this.HashSet.Add id = false then failwith "The existing id collides with the one in the set already."
-        
-type MediaPool<'t>(prefix : string, js : IJSRuntime) =
-    inherit MediaPoolBase()
-    
-    let separator = ':'
-    
-    let id_to_key id = $"%s{prefix}%c{separator}%i{id}"
-    let key_to_id (key : string) =
-        match key.Split separator with
-        | [|a;b|] when a = prefix -> Int32.Parse b
-        | _ -> failwith $"Expected a key with the prefix: %s{prefix}\nGot: %s{key}"
-    
-    member pool.Initialize() = task {
-        let! keys = LocalForage.keys js
-        keys
-        |> Array.filter (fun k -> k.StartsWith prefix)
-        |> Array.iter (key_to_id >> pool.AddExistingId)
-    }
-    
-    
-    member pool.CleanUp' (used : int seq) = task {
-        let all = pool.HashSet
-        let used = HashSet(used)
-        all.ExceptWith used
-        for id in all do
-            do! LocalForage.remove js (id_to_key id)
-        pool.HashSet <- used
-    }
-        
-    member pool.CleanUp used = pool.CleanUp' (Seq.map key_to_id used)
-    
-    member pool.Get id : 't ValueTask = LocalForage.get js (id_to_key id)
-    member pool.Set(id,v : 't) = LocalForage.set js (id_to_key id) v
-    
-type TextPool(js) = inherit MediaPool<string>("text",js)
-type ImagePool(js) = inherit MediaPool<byte []>("image",js)
-
-type HelixPort(parent : NodeModel, alignment, isInput : bool) =
-    inherit PortModel(parent, alignment, null, null)
-    
-    member val IsInput = isInput with get
-
-    override this.CanAttachTo(port) =
-        // This offset is because `this` already has a link by the time this function gets called.
-        let is_input_port_empty (a : HelixPort) by = a.IsInput && a.Links.Count + by = 0 
-        match port with
-        | :? HelixPort as cp ->
-            // Checks for same-node/port attachements.
-            base.CanAttachTo(port)
-            // Makes sure only input - output pairs are valid.
-            && this.IsInput <> cp.IsInput
-            // We also need to make sure that an input port only takes a single input.
-            // && (is_input_port_empty this -1 || is_input_port_empty cp 0)
-        | _ -> false
-
-type TextNode(p : Point, text_pool : TextPool) as node =
-    inherit NodeModel(p)
-    
-    let id = text_pool.GetNewId()
-    do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
-    do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
-    
-    let mutable text = ""
-    member _.Text = text
-    member _.OnChange text' = task {
-        text <- text'
-        return! text_pool.Set(id,text')
-    }
-    
-module Images =
-    type HelixUrlHandle(url : string, js : IJSRuntime) =
-        member _.URL = url
-        
-        override this.Finalize() = js.InvokeVoidAsync("URL.revokeObjectURL", url) |> ignore
-        
-    type HelixUrlInfo =    
-        {
-            content_type : string
-            guid : string
+        member m.GetLink() : _ IndexDbLink =
+             let id = rng.Next(Int32.MinValue,Int32.MaxValue)
+             if set.Add id then IndexDbLink id
+             else m.GetLink()
+             
+        member m.AddLink (IndexDbLink x) = set.Add x |> ignore
+        member m.AddLinks used = for id in used do m.AddLink (IndexDbLink id)
+             
+        /// Removes unused keys from the IndexedDb database.
+        member m.CleanUp (js : IJSRuntime) = task {
+            let! indexdb_keys = LocalForage.keys js
+            for k in indexdb_keys do
+                match Int32.TryParse k with
+                | true,v when set.Contains v -> ()
+                | _ -> do! LocalForage.remove js k
         }
         
-    type HelixUrl =
-        | HelixUrl of HelixUrlHandle * HelixUrlInfo
+open Data
+
+module Link =
+    let create js (IndexDbLink id as db_link : 'a IndexDbLink) =
+        {new HelixDbLink<'a> with
+            member this.DbLink = db_link
+            member this.Get = task {
+                match! LocalForage.get js (id_to_key id) with
+                | null -> return None
+                | x -> return Some x
+                }
+            member this.Set v = (LocalForage.set js (id_to_key id) v).AsTask()
+            }
+    
+open Data
+
+module Nodes =
+    open Data
+    
+    type HelixPort(parent : NodeModel, alignment, isInput : bool) =
+        inherit PortModel(parent, alignment, null, null)
         
-        static member Create (url : HelixUrlHandle) content_type = HelixUrl (url, { content_type = content_type; guid = $"image:{Guid.NewGuid().ToString()}" })
+        member val IsInput = isInput with get
+
+        override this.CanAttachTo(port) =
+            // This offset is because `this` already has a link by the time this function gets called.
+            let is_input_port_empty (a : HelixPort) by = a.IsInput && a.Links.Count + by = 0 
+            match port with
+            | :? HelixPort as cp ->
+                // Checks for same-node/port attachements.
+                base.CanAttachTo(port)
+                // Makes sure only input - output pairs are valid.
+                && this.IsInput <> cp.IsInput
+                // We also need to make sure that an input port only takes a single input.
+                // && (is_input_port_empty this -1 || is_input_port_empty cp 0)
+            | _ -> false
+            
+    [<AbstractClass>]
+    type HelixNode(p : Point) =
+        inherit NodeModel(p)
+        abstract member ToDbNode : HelixDbNode
+        abstract member Initialize :  unit -> Task
         
-    let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
-    let is_url url =
-        let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
-        is_url && Array.exists ((=) uri.Scheme) allowed_schemas
-        
-    let create_object_url_from_stream (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
-        use dotnetImageStream = new DotNetStreamReference(file)
-        let! url = Js.InvokeAsync<string>("createObjectURL_FromStream", dotnetImageStream, content_type)
-        return HelixUrlHandle(url, Js)
+    let init (x : #HelixNode) = task {
+        do! x.Initialize()
+        return x :> NodeModel
     }
+    
+    type TextNode(p : Point, db : string HelixDbLink) as node =
+        inherit HelixNode(p)
         
-    let upload_file' (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
-        let! url = create_object_url_from_stream Js file content_type
-        return HelixUrl.Create url content_type
-    }
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
         
-    let upload_file (Js : IJSRuntime) (file : IBrowserFile) = upload_file' Js (file.OpenReadStream(file.Size)) file.ContentType 
+        member val Text = "" with get, set
+        member this.OnChange (text : string) = task {
+            this.Text <- text
+            return! db.Set(text)
+        }
+        
+        override this.ToDbNode = S_TextNode(db.DbLink)
+        override this.Initialize() = task {
+            let! text = db.Get
+            Option.iter (fun text -> this.Text <- text) text
+        }
+        
+        static member Create p link js = TextNode(p,Link.create js link) |> init
+        
+    module Images =
+        type HelixUrlHandle(url : string, content_type : string, js : IJSRuntime) =
+            member _.URL = url
+            member _.ContentType = content_type
+            
+            override this.Finalize() = js.InvokeVoidAsync("URL.revokeObjectURL", url) |> ignore
+            
+        type HelixUrl =
+            | HelixDirectUrl of string * content_type: string
+            | HelixBlobUrl of HelixUrlHandle
+            
+            member this.Url =
+                match this with
+                | HelixDirectUrl(s, contentType) -> s
+                | HelixBlobUrl helixUrlHandle -> helixUrlHandle.URL
+            
+            member this.ContentType =
+                match this with
+                | HelixDirectUrl(_, contentType) -> contentType
+                | HelixBlobUrl x -> x.ContentType
+                
+        let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
+        let is_url url =
+            let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
+            is_url && Array.exists ((=) uri.Scheme) allowed_schemas
+        
+        let stream_to_byte_array (file : Stream) = task {
+            let len = Convert.ToInt32 file.Length
+            let ar = Array.zeroCreate len
+            let! bytes_read = file.ReadAsync(ar,0,len)
+            return ar
+        }
+            
+        let create_object_url (Js : IJSRuntime) (file : byte []) (content_type : string) = task {
+            let! url = Js.InvokeAsync<string>("createObjectURL", file, content_type)
+            return HelixUrlHandle(url, content_type, Js)
+        }
+            
+        let create_object_url_from_stream (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
+            let! ar = stream_to_byte_array file
+            let! url = create_object_url Js ar content_type
+            return url, ar
+        }
+            
+        let upload_file' (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
+            let! url, ar = create_object_url_from_stream Js file content_type
+            return HelixBlobUrl url, ar
+        }
+            
+        let upload_file (Js : IJSRuntime) (file : IBrowserFile) = upload_file' Js (file.OpenReadStream(file.Size)) file.ContentType 
+        
+        let copy_url_from_clipboard (Js : IJSRuntime) (http : HttpClient) = task {
+            let! url = Js.InvokeAsync<string>("navigator.clipboard.readText")
+            if is_url url then
+                let! response = http.GetAsync(url)
+                if response.IsSuccessStatusCode then
+                    let! file = response.Content.ReadAsStreamAsync()
+                    let! result = upload_file' Js file response.Content.Headers.ContentType.MediaType
+                    return Some result
+                else return None
+            else
+                return None
+        }
+        
+    open Images
+    type ImageNode(p : Point, db : (byte []) HelixDbLink, content_type, js) as node =
+        inherit HelixNode(p)
+        
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
+        
+        member val Src : HelixUrl = HelixDirectUrl("images/sun-big.png", "image/png") with get, set
+        
+        member _.UploadFile js http (file : IBrowserFile) : Task = task { let! helix_url = upload_file js file in do! node.OnChange helix_url }
+        member _.CopyUrlFromClipboard js http : Task = task {
+            let! helix_url = copy_url_from_clipboard js http
+            match helix_url with
+            | Some helix_url -> do! node.OnChange helix_url
+            | None -> ()
+        }
+        
+        member this.OnChange (x, ar) : Task = task {
+            this.Src <- x
+            do! db.Set ar
+        }
+        
+        override this.Initialize () = task {
+            match! db.Get with
+            | Some ar ->
+                let! url = create_object_url js ar content_type
+                do! this.OnChange (HelixBlobUrl url, ar)
+            | None ->
+                ()
+        }
+        
+        override this.ToDbNode = S_ImageNode(db.DbLink,this.Src.ContentType)
+        
+        static member Create p link content_type js = ImageNode(p,Link.create js link,content_type,js) |> init
+        static member Default p link js = task {return ImageNode(p,Link.create js link,"image/png",js) :> NodeModel}
+            
+    type DatabaseTestNode(p : Point) =
+        inherit HelixNode(p)
     
-    let copy_url_from_clipboard (Js : IJSRuntime) (http : HttpClient) = task {
-        let! url = Js.InvokeAsync<string>("navigator.clipboard.readText")
-        if is_url url then
-            let! response = http.GetAsync(url)
-            if response.IsSuccessStatusCode then
-                let! file = response.Content.ReadAsStreamAsync()
-                let! result = upload_file' Js file response.Content.Headers.ContentType.MediaType
-                return Some result
-            else return None
-        else
-            return None
-    }
-    
-open Images
-type ImageNode(p : Point, Js : IJSRuntime, Http : HttpClient) as node =
-    inherit NodeModel(p)
-    
-    do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
-    do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
-    
-    member val Src : HelixUrl = HelixUrl(HelixUrlHandle("images/sun-big.png",Js), { content_type="image/png"; guid="image:default"}) with get, set
-    
-    member _.UploadFile (file : IBrowserFile) = task { let! helix_url = upload_file Js file in node.Src <- helix_url }
-    member _.CopyUrlFromClipboard() = task { let! helix_url = copy_url_from_clipboard Js Http in Option.iter (fun url -> node.Src <- url) helix_url }
-    
-type DatabaseTestNode(p : Point) =
-    inherit NodeModel(p)
-    
-type CompilationNode(p : Point) as node =
-    inherit NodeModel(p)
-    
-    do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore // It doesn't have an output port.
-    
-    member val ChildComponent : RenderFragment IEnumerable = [||] with get, set
-    
+        override this.ToDbNode = S_DatabaseTestNode
+        override this.Initialize() = Task.CompletedTask
+        
+        static member Create p = DatabaseTestNode p |> init
+        
+    type CompilationNode(p : Point) as node =
+        inherit HelixNode(p)
+        
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore // It doesn't have an output port.
+        
+        member val ChildComponent : RenderFragment IEnumerable = [||] with get, set
+        
+        override this.ToDbNode = S_CompilationNode
+        override this.Initialize() = Task.CompletedTask
+        
+        static member Create p = CompilationNode p |> init
+        
+open Nodes
+
 module Utils =
-    let add_node (d : Diagram, node_constructor : Func<Point, NodeModel>) (ev : MouseEventArgs) =
+    let add_node (d : Diagram, node_constructor : Func<Point, NodeModel Task>) (ev : MouseEventArgs) = task {
         let to_canvas_point (x,y) = d.GetRelativeMousePoint(x,y)
-        d.Nodes.Add(node_constructor.Invoke(to_canvas_point(ev.ClientX, ev.ClientY)))
-   
+        let! node = node_constructor.Invoke(to_canvas_point(ev.ClientX, ev.ClientY))
+        d.Nodes.Add(node)
+    }
+
 module StoreLoad =
-    type StoredNodes =
-        | S_TextNode of string
-        | S_ImageNode of HelixUrlInfo
-        | S_CompilationNode
-        | S_DatabaseTestNode
-        
-    type NodeT = StoredNodes * (double * double)
+    module LocalStorage =
+        let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localStorage.getItem", k)
+        let set (js : IJSRuntime) (k : string) v = js.InvokeVoidAsync("localStorage.setItem", k, v)
+    
+    type NodeT = HelixDbNode * (double * double)
     type LinkT = int * int
     
-    let private diagram_ids (nodes : NodeModel seq) =
+    let private diagram_ids (nodes : #NodeModel seq) =
         let d_ports_from = Dictionary(HashIdentity.Reference)
         let d_ports_to = Dictionary()
         
@@ -200,39 +276,14 @@ module StoreLoad =
                 )
             )
         d_ports_from, d_ports_to
-    
-    let save_image_urls_to_indexeddb (js : IJSRuntime) (http : HttpClient) (urls : HelixUrl[]) =
-        urls |> Array.map (fun (HelixUrl(handle,info)) -> task {
-                let! data = http.GetAsync handle.URL
-                printfn "Status code: %A" data.StatusCode
-                let! text = data.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync()
-                do! LocalForage.set js info.guid text
-            }) |> Task.WhenAll
-        
             
     let to_tuple (p : Point) = p.X, p.Y
     let store (diagram : Diagram) js http = task {
         let d_ports_from, d_ports_to = diagram_ids diagram.Nodes
         let nodes = diagram.Nodes |> Seq.toArray
         
-        let store_task () =
-            nodes |> Array.choose (function
-                | :? ImageNode as n -> Some n.Src
-                | _ -> None
-                )
-            |> save_image_urls_to_indexeddb js http
-            
         let nodes =
-            nodes |> Array.map (fun n ->
-                let p = to_tuple n.Position
-                let n = match n with
-                        | :? TextNode as n -> S_TextNode n.Text
-                        | :? ImageNode as n -> S_ImageNode (match n.Src with HelixUrl(_,info) -> info)
-                        | :? CompilationNode as n -> S_CompilationNode
-                        | :? DatabaseTestNode as n -> S_DatabaseTestNode
-                        | n -> failwithf $"Type not supported: {n.GetType()}"
-                n, p
-                )
+            nodes |> Array.map (fun n -> (n :?> HelixNode).ToDbNode, to_tuple n.Position)
             |> fun (x : NodeT []) -> Encode.Auto.toString x
         
         let links =
@@ -243,47 +294,38 @@ module StoreLoad =
                 )
             |> fun (x : LinkT []) -> Thoth.Json.Net.Encode.Auto.toString x
             
-        printfn "Starting the store of images."
-        let! _ = store_task ()
-        printfn "Stored the images."
-        do! LocalForage.set js "diagram_nodes" nodes
-        do! LocalForage.set js "diagram_links" links
-        printfn "Stored the diagram nodes and links."
+        do! LocalStorage.set js "diagram_nodes" nodes
+        do! LocalStorage.set js "diagram_links" links
     }
        
-    let load_images_from_indexeddb (js : IJSRuntime) (infos : HelixUrlInfo []) =
-        infos |> Array.map (fun info -> task {
-            let! (data : byte []) = LocalForage.get js info.guid
-            let! url = js.InvokeAsync<string>("createObjectURL", data, info.content_type)
-            return HelixUrl(HelixUrlHandle(url, js), info)
-        }) |> Task.WhenAll
-    
-    let load (d : Diagram) (js : IJSRuntime) (http : HttpClient) = task {
+    let load (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
         d.Nodes.Clear()
         d.Links.Clear()
         
         let decode nodes = 
             if nodes = null then [||]
             else Decode.Auto.unsafeFromString nodes
-        let! nodes = LocalForage.get js "diagram_nodes"
-        let! links = LocalForage.get js "diagram_links"
+        let! nodes = LocalStorage.get js "diagram_nodes"
+        let! links = LocalStorage.get js "diagram_links"
         let nodes : NodeT [] = decode nodes
         
-        let! urls =
-            nodes |> Array.choose (function
-                | S_ImageNode info, _ -> Some info
-                | _ -> None)
-            |> load_images_from_indexeddb js
-        
-        let nodes =
-            let mutable i = 0
-            let get_i() = let x = i in i <- i+1; x
+        let _ = // Initializes the media pool.
+            let db_links =
+                nodes |> Array.choose (fun (n,_) ->
+                    match n with
+                    | S_ImageNode (IndexDbLink i, _) | S_TextNode (IndexDbLink i) -> Some i
+                    | S_CompilationNode | S_DatabaseTestNode -> None
+                    )
+              
+            m.AddLinks db_links; m.CleanUp js
+                    
+        let! nodes =
             nodes |> Array.map (function
-                | S_TextNode s, p -> TextNode(Point p, Text=s) :> NodeModel
-                | S_ImageNode info, p -> ImageNode(Point p, js, http, Src=urls[get_i()])
-                | S_CompilationNode, p -> CompilationNode(Point p)
-                | S_DatabaseTestNode, p -> DatabaseTestNode(Point p) 
-                )
+                | S_TextNode s, p -> TextNode.Create (Point p) s js
+                | S_ImageNode (s, content_type), p -> ImageNode.Create (Point p) s content_type js
+                | S_CompilationNode, p -> CompilationNode.Create (Point p)
+                | S_DatabaseTestNode, p -> DatabaseTestNode.Create (Point p)
+                ) |> Task.WhenAll
             
         let d_ports_from, d_ports_to = diagram_ids nodes
         
@@ -303,7 +345,7 @@ type UndoBufferActions =
     | U_NodesMoved of start: Dictionary<NodeModel,Point> * ``end``: Dictionary<NodeModel,Point>
         
 open FSharp.Control.Reactive
-type HelixDiagramBase(js : IJSRuntime, http : HttpClient, opts) as this =
+type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) as this =
     inherit Diagram(opts)
     
     let redo = Stack()
@@ -380,20 +422,16 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, opts) as this =
             do! js.InvokeVoidAsync("registerUnloadEvent", DotNetObjectReference.Create(this));            
             is_loaded <- true
 
-        do! StoreLoad.load this js http
+        do! StoreLoad.load this js m
     }
     
-    [<JSInvokable>]
     member this.OnStore() = task {
         if is_loaded then
             do! StoreLoad.store this js http
     }
     
     [<JSInvokable>]
-    member this.OnVisibilityChangeHidden() = task {
-        do! js.InvokeVoidAsync("localStorage.setItem", "Hello", "World")
-        do! LocalForage.set js "Hello" "World."
-    }
+    member this.OnVisibilityChangeHidden() = this.OnStore()
     
 module Compilation =
     exception CycleException of NodeModel

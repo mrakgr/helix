@@ -12,6 +12,7 @@
 
     <ItemGroup>
       <PackageReference Include="FSharp.Control.Reactive" Version="5.0.5" />
+      <PackageReference Include="MessagePack.FSharpExtensions" Version="4.0.0" />
       <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="7.0.5" />
       <PackageReference Include="Thoth.Json.Net" Version="11.0.0" />
       <PackageReference Include="Z.Blazor.Diagrams" Version="2.1.6" />

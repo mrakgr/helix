@@ -2,17 +2,31 @@
 
 @inject HelixDiagram Diagram
 @inject IJSRuntime Js
+@inject Data.MediaPool MediaPool
 
 <MudCard Class="pa-8"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
     <MudStack>
-        <MudStack Row="true">
+        <MudStack Row="true" Justify="Justify.SpaceBetween">
             <MudButton @onclick="Diagram.OnStore">Store Database</MudButton>
             <MudButton @onclick="Diagram.OnLoad">Load Database</MudButton>
         </MudStack>
         <MudButton @onclick="OnGC_Collect">GC.Collect</MudButton>
-        <MudButton @onclick="OnDownloadDiagram">Download Diagram</MudButton>
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Baseline" >
+            <MudButton @onclick="OnDownloadDiagram">Download Diagram</MudButton>
+            <MudFileUpload T="IBrowserFile" Accept=".helixdb" FilesChanged="OnUploadDiagram" MaximumFileCount="100">
+                <ButtonTemplate>
+                    <MudButton HtmlTag="label"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.CloudUpload"
+                               for="@context">
+                        Only .helixdb files
+                    </MudButton>
+                </ButtonTemplate>
+            </MudFileUpload>
+        </MudStack>
     </MudStack>
 </MudCard>
 
@@ -27,6 +41,7 @@
         GC.Collect();
     }
 
-    private Task OnDownloadDiagram() => Utils.download_diagram(Js);
+    private Task OnDownloadDiagram() => StoreLoad.on_database_download(Js,Diagram);
+    private Task OnUploadDiagram(IBrowserFile file) => StoreLoad.database_upload(Js, MediaPool, Diagram, file);
 
 }

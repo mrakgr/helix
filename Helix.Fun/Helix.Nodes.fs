@@ -4,7 +4,6 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Net.Http
-open System.Text
 open System.Threading.Tasks
 open Blazor.Diagrams.Core
 open Blazor.Diagrams.Core.Geometry
@@ -25,7 +24,9 @@ module LocalForage =
     let keys (js : IJSRuntime) = js.InvokeAsync<string []>("localforage.keys")
     
 module Data =
-    type [<Struct>] IndexDbLink<'t> = IndexDbLink of int
+    type [<MessagePack.MessagePackObject; Struct>] IndexDbLink<'t> = IndexDbLink of int
+    
+    [<MessagePack.MessagePackObject>]
     type HelixDbNode =
      | S_TextNode of db: IndexDbLink<string>
      | S_ImageNode of db: IndexDbLink<byte []> * content_type: string
@@ -49,7 +50,11 @@ module Data =
              else m.GetLink()
              
         member m.AddLink (IndexDbLink x) = set.Add x |> ignore
-        member m.AddLinks used = for id in used do m.AddLink (IndexDbLink id)
+        
+        /// CLears the pool before adding the links.
+        member m.AddInitialLinks used =
+            set.Clear()
+            for id in used do m.AddLink (IndexDbLink id)
              
         /// Removes unused keys from the IndexedDb database.
         member m.CleanUp (js : IJSRuntime) = task {
@@ -63,15 +68,19 @@ module Data =
 open Data
 
 module Link =
-    let create js (IndexDbLink id as db_link : 'a IndexDbLink) =
+    let get js (IndexDbLink id) = task {
+        match! LocalForage.get js (id_to_key id) with
+        | null -> return None
+        | x -> return Some x
+        }
+    
+    let set js (IndexDbLink id) v = (LocalForage.set js (id_to_key id) v).AsTask()
+    
+    let create js (db_link : 'a IndexDbLink) =
         {new HelixDbLink<'a> with
             member this.DbLink = db_link
-            member this.Get = task {
-                match! LocalForage.get js (id_to_key id) with
-                | null -> return None
-                | x -> return Some x
-                }
-            member this.Set v = (LocalForage.set js (id_to_key id) v).AsTask()
+            member this.Get = get js db_link
+            member this.Set v = set js db_link v
             }
     
 module Nodes =
@@ -274,8 +283,9 @@ module StoreLoad =
         let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localStorage.getItem", k)
         let set (js : IJSRuntime) (k : string) v = js.InvokeVoidAsync("localStorage.setItem", k, v)
     
-    type NodeT = HelixDbNode * (double * double)
-    type LinkT = int * int
+    open MessagePack
+    type [<MessagePackObject true>] NodeT = { node : HelixDbNode; point : double * double }
+    type [<MessagePackObject true>] LinkT = { source : int; target : int }
     
     let local_storage_to js (nodes : NodeT []) (links : LinkT []) = task {
         do! LocalStorage.set js "diagram_nodes" (Encode.Auto.toString nodes)
@@ -304,37 +314,35 @@ module StoreLoad =
             )
         d_ports_from, d_ports_to
         
-    let to_db_node (n : NodeModel) =
-        let to_tuple (p : Point) = p.X, p.Y
-        (n :?> HelixNode).ToDbNode, to_tuple n.Position
+    let to_db_node (n : NodeModel) = {
+        node = (n :?> HelixNode).ToDbNode
+        point = let n = n.Position in n.X, n.Y 
+    }
         
     let store_nodes_links (nodes : NodeModel []) (links : BaseLinkModel []) =
         let d_ports_from, _ = diagram_ids nodes
         
         let nodes = nodes |> Array.map to_db_node
-        let links =
-            links
-            |> Array.map (fun x ->
-                d_ports_from[x.SourcePort], d_ports_from[x.TargetPort]
-                )
+        let links = links |> Array.map (fun x -> {source = d_ports_from[x.SourcePort]; target = d_ports_from[x.TargetPort]})
         nodes, links
         
     
-    let store' (diagram : Diagram) = store_nodes_links (Seq.toArray diagram.Nodes) (Seq.toArray diagram.Links)
-        
+    let store' (diagram : Diagram) : NodeT [] * LinkT [] = store_nodes_links (Seq.toArray diagram.Nodes) (Seq.toArray diagram.Links)
     
     let load_nodes_links js (nodes : NodeT []) (links : LinkT []) = task {
         let! nodes =
-            nodes |> Array.map (function
-                | S_TextNode s, p -> TextNode.Create (Point p) s js
-                | S_ImageNode (s, content_type), p -> ImageNode.Create (Point p) s content_type js
-                | S_CompilationNode, p -> CompilationNode.Create (Point p)
-                | S_DatabaseTestNode, p -> DatabaseTestNode.Create (Point p)
+            nodes |> Array.map (fun x ->
+                let p = Point x.point
+                match x.node with
+                | S_TextNode s -> TextNode.Create p s js
+                | S_ImageNode (s, content_type) -> ImageNode.Create p s content_type js
+                | S_CompilationNode -> CompilationNode.Create p
+                | S_DatabaseTestNode -> DatabaseTestNode.Create p
                 ) |> Task.WhenAll
         let _, d_ports_to = diagram_ids nodes
         let links =
-            links |> Array.map (fun (source, target) ->
-                LinkModel(d_ports_to[source],d_ports_to[target]) :> BaseLinkModel
+            links |> Array.map (fun x ->
+                LinkModel(d_ports_to[x.source],d_ports_to[x.target]) :> BaseLinkModel
                 )
             
         return nodes, links
@@ -342,23 +350,27 @@ module StoreLoad =
     
     let media_pool_initialize js (m : MediaPool) (nodes : NodeT []) =
         nodes
-        |> Array.choose (fun (n,_) ->
-            match n with
+        |> Array.choose (fun n ->
+            match n.node with
             | S_ImageNode (IndexDbLink i, _) | S_TextNode (IndexDbLink i) -> Some i
             | S_CompilationNode | S_DatabaseTestNode -> None
             )
-        |> m.AddLinks
+        |> m.AddInitialLinks
         
         m.CleanUp js
         
-    let load_on_visibility_change (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
+    let load' (d : Diagram) (js : IJSRuntime) (m : MediaPool) nodes links = task {
         d.Nodes.Clear(); d.Links.Clear()
         
-        let! nodes, links = local_storage_from js
         do! media_pool_initialize js m nodes
         let! nodes, links = load_nodes_links js nodes links
                     
         d.Nodes.Add nodes; d.Links.Add links
+    }
+    
+    let load_on_visibility_change (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
+        let! nodes, links = local_storage_from js
+        do! load' d js m nodes links
     }
         
     let store_on_visibility_change (diagram : Diagram) js _http = task {
@@ -366,6 +378,64 @@ module StoreLoad =
         do! local_storage_to js nodes links
     }
     
+    open MessagePack.Resolvers
+    open MessagePack.FSharp
+       
+    type [<MessagePackObject true>] HelixDiagramFile = {
+        nodes : NodeT []
+        links : LinkT []
+        images : (int * byte []) []
+        text : (int * string) []
+    }
+    
+    let store_mp js diagram = task {
+        let images, text = ResizeArray(), ResizeArray()
+        let nodes, links = store' diagram
+        for n in nodes do
+            match n.node with
+            | S_ImageNode (IndexDbLink id as x, _) ->
+                let! x = Link.get js x
+                Option.iter (fun x -> images.Add(id,x)) x
+            | S_TextNode (IndexDbLink id as x) ->
+                let! x = Link.get js x
+                Option.iter (fun x -> text.Add(id,x)) x
+            | S_CompilationNode | S_DatabaseTestNode -> ()
+            
+        return {
+            nodes = nodes
+            links = links
+            images = images.ToArray()
+            text = text.ToArray()
+        }
+    }
+    
+    let load_mp js (m : MediaPool) diagram (n : HelixDiagramFile) = task {
+        for id,ar in n.images do
+            do! LocalForage.set js (id_to_key id) ar
+        for id,ar in n.text do
+            do! LocalForage.set js (id_to_key id) ar
+            
+        do! load' diagram js m n.nodes n.links
+    }
+    
+    module private MessagePackUtils =
+        let resolver = CompositeResolver.Create(FSharpResolver.Instance, StandardResolver.Instance)
+        let options = MessagePackSerializerOptions.Standard.WithResolver(resolver)
+        
+        let serialize (value: HelixDiagramFile) = MessagePackSerializer.Serialize(value, options)
+        let deserialize (value: byte []) = MessagePackSerializer.Deserialize<HelixDiagramFile>(value, options)
+        
+    open MessagePackUtils
+    let on_database_download js diagram = task {
+        let! mp = store_mp js diagram
+        do! js.InvokeVoidAsync("downloadFile","diagram.helixdb", serialize mp)
+    }
+    
+    let database_upload js m diagram (file : IBrowserFile) = task {
+        let! ar = Images.stream_to_byte_array (file.OpenReadStream(file.Size) )
+        do! ar |> deserialize |> load_mp js m diagram
+    }
+
 type UndoBufferActions =
     | U_NodeAdded of NodeModel
     | U_NodeRemoved of NodeModel

@@ -150,7 +150,7 @@ module Nodes =
             let! _bytes_read = file.ReadAsync(ar,0,len)
             return ar
         }
-            
+        
         let create_object_url (Js : IJSRuntime) (file : byte []) (content_type : string) = task {
             let! url = Js.InvokeAsync<string>("createObjectURL", file, content_type)
             return HelixUrlHandle(url, content_type, Js)
@@ -166,7 +166,6 @@ module Nodes =
             let! url, ar = create_object_url_from_stream Js file content_type
             return HelixBlobUrl url, ar
         }
-            
         let upload_file (Js : IJSRuntime) (file : IBrowserFile) = upload_file' Js (file.OpenReadStream(file.Size)) file.ContentType
         
         let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
@@ -183,24 +182,24 @@ module Nodes =
         
         let copy_url_from_clipboard (Js : IJSRuntime) (http : HttpClient) = task {
             let! url = Js.InvokeAsync<string>("navigator.clipboard.readText")
-            match try_base64_image url with 
-            | Some content_type ->
-                let data = url[(base64_image_prefix content_type).Length..] |> Convert.FromBase64String
-                let! url = create_object_url Js data content_type
-                return Some (HelixBlobUrl url, data)
-            | None ->
-                if is_url url then
+            if is_url url then
+                let! response = http.GetAsync(url)
+                if response.IsSuccessStatusCode then
+                    let! file = response.Content.ReadAsByteArrayAsync()
+                    if Array.exists ((=) response.Content.Headers.ContentType.MediaType) content_types then
+                        let! result = create_object_url Js file response.Content.Headers.ContentType.MediaType
+                        return Some (HelixBlobUrl result, file)
+                    else
+                        return None
+                else return None
+            else
+                match! Js.InvokeAsync<obj []>("getImageFromClipboard") with
+                | [|url; content_type|] ->
+                    let url, content_type = url.ToString(), content_type.ToString()
                     let! response = http.GetAsync(url)
-                    if response.IsSuccessStatusCode then
-                        let! file = response.Content.ReadAsStreamAsync()
-                        if Array.exists ((=) response.Content.Headers.ContentType.MediaType) content_types then
-                            let! result = upload_file' Js file response.Content.Headers.ContentType.MediaType
-                            return Some result
-                        else
-                            return None
-                    else return None
-                else
-                    return None
+                    let! ar = response.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync()
+                    return Some (HelixBlobUrl(HelixUrlHandle(url,content_type,Js)),ar)
+                | _ -> return None
         }
         
     open Images

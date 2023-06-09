@@ -46,7 +46,7 @@
                 for (const item of clipboardContents) {
                     for (const type of item.types) {
                         if (contentTypes.includes(type)) {
-                            return [URL.createObjectURL(await item.getType(type)), type]
+                            return [URL.createObjectURL(await item.getType(type), type), type]
                         }
                     }
                 }

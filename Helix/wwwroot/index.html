@@ -22,6 +22,17 @@
     </div>
 
     <script>
+        async function downloadFile(fileName, arrayBuffer) {
+            const blob = new Blob([arrayBuffer]);
+            const url = URL.createObjectURL(blob);
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName ?? '';
+            anchorElement.click();
+            anchorElement.remove();
+            URL.revokeObjectURL(url);
+        }
+        
         function createObjectURL(imageArray, type) {
             const blob = new Blob([imageArray], {type});
             return URL.createObjectURL(blob)
@@ -42,6 +53,7 @@
                 if (permission.state === "denied") {
                     throw new Error("Not allowed to read clipboard.");
                 }
+                
                 const clipboardContents = await navigator.clipboard.read();
                 for (const item of clipboardContents) {
                     for (const type of item.types) {

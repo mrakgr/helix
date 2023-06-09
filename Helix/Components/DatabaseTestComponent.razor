@@ -1,6 +1,7 @@
 ﻿@using Helix.Types
 
 @inject HelixDiagram Diagram
+@inject IJSRuntime Js
 
 <MudCard Class="pa-8"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
@@ -11,6 +12,7 @@
             <MudButton @onclick="Diagram.OnLoad">Load Database</MudButton>
         </MudStack>
         <MudButton @onclick="OnGC_Collect">GC.Collect</MudButton>
+        <MudButton @onclick="OnDownloadDiagram">Download Diagram</MudButton>
     </MudStack>
 </MudCard>
 
@@ -24,5 +26,7 @@
     {
         GC.Collect();
     }
+
+    private Task OnDownloadDiagram() => Utils.download_diagram(Js);
 
 }

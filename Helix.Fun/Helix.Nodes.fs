@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Net.Http
+open System.Text
 open System.Threading.Tasks
 open Blazor.Diagrams.Core
 open Blazor.Diagrams.Core.Geometry
@@ -186,8 +187,9 @@ module Nodes =
                 let! response = http.GetAsync(url)
                 if response.IsSuccessStatusCode then
                     let! file = response.Content.ReadAsByteArrayAsync()
-                    if Array.exists ((=) response.Content.Headers.ContentType.MediaType) content_types then
-                        let! result = create_object_url Js file response.Content.Headers.ContentType.MediaType
+                    let content_type = response.Content.Headers.ContentType.MediaType
+                    if Array.exists ((=) content_type) content_types then
+                        let! result = create_object_url Js file content_type
                         return Some (HelixBlobUrl result, file)
                     else
                         return None
@@ -266,7 +268,7 @@ module Utils =
         let! node = node_constructor.Invoke(to_canvas_point(ev.ClientX, ev.ClientY))
         d.Nodes.Add(node)
     }
-
+    
 module StoreLoad =
     module LocalStorage =
         let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localStorage.getItem", k)
@@ -275,11 +277,25 @@ module StoreLoad =
     type NodeT = HelixDbNode * (double * double)
     type LinkT = int * int
     
-    let private diagram_ids (nodes : #NodeModel seq) =
+    let local_storage_to js (nodes : NodeT []) (links : LinkT []) = task {
+        do! LocalStorage.set js "diagram_nodes" (Encode.Auto.toString nodes)
+        do! LocalStorage.set js "diagram_links" (Encode.Auto.toString links)
+    }
+    
+    let local_storage_from js : (NodeT [] * LinkT []) Task = task {
+        let decode nodes = 
+            if nodes = null then [||]
+            else Decode.Auto.unsafeFromString nodes
+        let! nodes = LocalStorage.get js "diagram_nodes"
+        let! links = LocalStorage.get js "diagram_links"
+        return decode nodes, decode links
+    }
+    
+    let diagram_ids (nodes : #NodeModel []) =
         let d_ports_from = Dictionary(HashIdentity.Reference)
         let d_ports_to = Dictionary()
         
-        nodes |> Seq.iter (fun x ->
+        nodes |> Array.iter (fun x ->
             x.Ports |> Seq.iter (fun x ->
                 let i = d_ports_from.Count
                 d_ports_from.Add(x,i) // Maps the ports to unique ids.
@@ -287,49 +303,27 @@ module StoreLoad =
                 )
             )
         d_ports_from, d_ports_to
-            
-    let to_tuple (p : Point) = p.X, p.Y
-    let store (diagram : Diagram) js _http = task {
-        let d_ports_from, _ = diagram_ids diagram.Nodes
-        let nodes = diagram.Nodes |> Seq.toArray
         
-        let nodes =
-            nodes |> Array.map (fun n -> (n :?> HelixNode).ToDbNode, to_tuple n.Position)
-            |> fun (x : NodeT []) -> Encode.Auto.toString x
+    let to_db_node (n : NodeModel) =
+        let to_tuple (p : Point) = p.X, p.Y
+        (n :?> HelixNode).ToDbNode, to_tuple n.Position
         
+    let store_nodes_links (nodes : NodeModel []) (links : BaseLinkModel []) =
+        let d_ports_from, _ = diagram_ids nodes
+        
+        let nodes = nodes |> Array.map to_db_node
         let links =
-            diagram.Links
-            |> Seq.toArray
+            links
             |> Array.map (fun x ->
                 d_ports_from[x.SourcePort], d_ports_from[x.TargetPort]
                 )
-            |> fun (x : LinkT []) -> Encode.Auto.toString x
-            
-        do! LocalStorage.set js "diagram_nodes" nodes
-        do! LocalStorage.set js "diagram_links" links
-    }
-       
-    let load (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
-        d.Nodes.Clear()
-        d.Links.Clear()
+        nodes, links
         
-        let decode nodes = 
-            if nodes = null then [||]
-            else Decode.Auto.unsafeFromString nodes
-        let! nodes = LocalStorage.get js "diagram_nodes"
-        let! links = LocalStorage.get js "diagram_links"
-        let nodes : NodeT [] = decode nodes
+    
+    let store' (diagram : Diagram) = store_nodes_links (Seq.toArray diagram.Nodes) (Seq.toArray diagram.Links)
         
-        let _ = // Initializes the media pool.
-            let db_links =
-                nodes |> Array.choose (fun (n,_) ->
-                    match n with
-                    | S_ImageNode (IndexDbLink i, _) | S_TextNode (IndexDbLink i) -> Some i
-                    | S_CompilationNode | S_DatabaseTestNode -> None
-                    )
-              
-            m.AddLinks db_links; m.CleanUp js
-                    
+    
+    let load_nodes_links js (nodes : NodeT []) (links : LinkT []) = task {
         let! nodes =
             nodes |> Array.map (function
                 | S_TextNode s, p -> TextNode.Create (Point p) s js
@@ -337,17 +331,41 @@ module StoreLoad =
                 | S_CompilationNode, p -> CompilationNode.Create (Point p)
                 | S_DatabaseTestNode, p -> DatabaseTestNode.Create (Point p)
                 ) |> Task.WhenAll
-            
         let _, d_ports_to = diagram_ids nodes
-        
         let links =
-            (decode links : LinkT [])
-            |> Array.map (fun (source, target) ->
+            links |> Array.map (fun (source, target) ->
                 LinkModel(d_ports_to[source],d_ports_to[target]) :> BaseLinkModel
                 )
+            
+        return nodes, links
+    }
+    
+    let media_pool_initialize js (m : MediaPool) (nodes : NodeT []) =
+        nodes
+        |> Array.choose (fun (n,_) ->
+            match n with
+            | S_ImageNode (IndexDbLink i, _) | S_TextNode (IndexDbLink i) -> Some i
+            | S_CompilationNode | S_DatabaseTestNode -> None
+            )
+        |> m.AddLinks
+        
+        m.CleanUp js
+        
+    let load_on_visibility_change (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
+        d.Nodes.Clear(); d.Links.Clear()
+        
+        let! nodes, links = local_storage_from js
+        do! media_pool_initialize js m nodes
+        let! nodes, links = load_nodes_links js nodes links
+                    
         d.Nodes.Add nodes; d.Links.Add links
     }
         
+    let store_on_visibility_change (diagram : Diagram) js _http = task {
+        let nodes, links = store' diagram
+        do! local_storage_to js nodes links
+    }
+    
 type UndoBufferActions =
     | U_NodeAdded of NodeModel
     | U_NodeRemoved of NodeModel
@@ -433,12 +451,12 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) a
             do! js.InvokeVoidAsync("registerUnloadEvent", DotNetObjectReference.Create(this));            
             is_loaded <- true
 
-        do! StoreLoad.load this js m
+        do! StoreLoad.load_on_visibility_change this js m
     }
     
     member this.OnStore() = task {
         if is_loaded then
-            do! StoreLoad.store this js http
+            do! StoreLoad.store_on_visibility_change this js http
     }
     
     [<JSInvokable>]

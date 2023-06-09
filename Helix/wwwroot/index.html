@@ -32,9 +32,26 @@
             return createObjectURL(arrayBuffer,type)
         }
 
-        function sleep(miliseconds) {
-            var currentTime = new Date().getTime();
-            while (currentTime + miliseconds >= new Date().getTime()) {
+        const contentTypes = ["image/gif", "image/jpeg", "image/png", "image/svg+xml", "image/webp"]
+
+        async function getImageFromClipboard() {
+            try {
+                const permission = await navigator.permissions.query({
+                    name: "clipboard-read",
+                });
+                if (permission.state === "denied") {
+                    throw new Error("Not allowed to read clipboard.");
+                }
+                const clipboardContents = await navigator.clipboard.read();
+                for (const item of clipboardContents) {
+                    for (const type of item.types) {
+                        if (contentTypes.includes(type)) {
+                            return [URL.createObjectURL(await item.getType(type)), type]
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(error.message);
             }
         }
         

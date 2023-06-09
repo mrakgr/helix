@@ -144,11 +144,6 @@ module Nodes =
                 | HelixDirectUrl(_, contentType) -> contentType
                 | HelixBlobUrl x -> x.ContentType
                 
-        let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
-        let is_url url =
-            let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
-            is_url && Array.exists ((=) uri.Scheme) allowed_schemas
-        
         let stream_to_byte_array (file : Stream) = task {
             let len = Convert.ToInt32 file.Length
             let ar = Array.zeroCreate len
@@ -160,7 +155,7 @@ module Nodes =
             let! url = Js.InvokeAsync<string>("createObjectURL", file, content_type)
             return HelixUrlHandle(url, content_type, Js)
         }
-            
+        
         let create_object_url_from_stream (Js : IJSRuntime) (file : Stream) (content_type : string) = task {
             let! ar = stream_to_byte_array file
             let! url = create_object_url Js ar content_type
@@ -172,19 +167,40 @@ module Nodes =
             return HelixBlobUrl url, ar
         }
             
-        let upload_file (Js : IJSRuntime) (file : IBrowserFile) = upload_file' Js (file.OpenReadStream(file.Size)) file.ContentType 
+        let upload_file (Js : IJSRuntime) (file : IBrowserFile) = upload_file' Js (file.OpenReadStream(file.Size)) file.ContentType
+        
+        let allowed_schemas = [|Uri.UriSchemeHttp; Uri.UriSchemeHttps; Uri.UriSchemeFile; Uri.UriSchemeFtp; Uri.UriSchemeFtps|]
+        let is_url (url : string) =
+            let url =
+                let prefix = "blob:"
+                if url.StartsWith prefix then url.Substring prefix.Length else url
+            let is_url,uri = Uri.TryCreate(url, UriKind.Absolute)
+            is_url && Array.exists ((=) uri.Scheme) allowed_schemas
+            
+        let content_types = [|"image/gif"; "image/jpeg"; "image/png"; "image/svg+xml"; "image/webp"|]
+        let base64_image_prefix x = $"data:%s{x};base64,"
+        let try_base64_image (url : string) = content_types |> Array.tryFind (base64_image_prefix >> url.StartsWith)
         
         let copy_url_from_clipboard (Js : IJSRuntime) (http : HttpClient) = task {
             let! url = Js.InvokeAsync<string>("navigator.clipboard.readText")
-            if is_url url then
-                let! response = http.GetAsync(url)
-                if response.IsSuccessStatusCode then
-                    let! file = response.Content.ReadAsStreamAsync()
-                    let! result = upload_file' Js file response.Content.Headers.ContentType.MediaType
-                    return Some result
-                else return None
-            else
-                return None
+            match try_base64_image url with 
+            | Some content_type ->
+                let data = url[(base64_image_prefix content_type).Length..] |> Convert.FromBase64String
+                let! url = create_object_url Js data content_type
+                return Some (HelixBlobUrl url, data)
+            | None ->
+                if is_url url then
+                    let! response = http.GetAsync(url)
+                    if response.IsSuccessStatusCode then
+                        let! file = response.Content.ReadAsStreamAsync()
+                        if Array.exists ((=) response.Content.Headers.ContentType.MediaType) content_types then
+                            let! result = upload_file' Js file response.Content.Headers.ContentType.MediaType
+                            return Some result
+                        else
+                            return None
+                    else return None
+                else
+                    return None
         }
         
     open Images

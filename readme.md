@@ -1,6 +1,6 @@
 ﻿# Helix - A VN Compiler
 
-![](E:\Webdev\Blazor\screenie.jpg)
+![](screenie.jpg)
 
 A node based UI making it easier to create visual novels.
 

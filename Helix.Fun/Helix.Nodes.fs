@@ -26,12 +26,35 @@ module LocalForage =
 module Data =
     type [<MessagePack.MessagePackObject; Struct>] IndexDbLink<'t> = IndexDbLink of int
     
+    [<MessagePack.MessagePackObject true>]
+    type TextNodeArgs = {
+        db: IndexDbLink<string>
+        style: string
+    }
+    
+    [<MessagePack.MessagePackObject true>]
+    type ImageNodeArgs = {
+        db: IndexDbLink<byte []>
+        content_type: string
+        style: string
+    }
+    
+    [<MessagePack.MessagePackObject true>]
+    type CompilationNodeArgs = {
+        inline_styles : bool
+    }
+    
+    [<MessagePack.MessagePackObject true>]
+    type DatabaseTestNode = {
+        __placeholder: bool
+    }
+    
     [<MessagePack.MessagePackObject>]
     type HelixDbNode =
-     | S_TextNode of db: IndexDbLink<string>
-     | S_ImageNode of db: IndexDbLink<byte []> * content_type: string
-     | S_CompilationNode
-     | S_DatabaseTestNode
+     | S_TextNode of TextNodeArgs
+     | S_ImageNode of ImageNodeArgs
+     | S_CompilationNode of CompilationNodeArgs
+     | S_DatabaseTestNode of DatabaseTestNode
      
      type HelixDbLink<'t> =
          abstract member DbLink : 't IndexDbLink
@@ -125,7 +148,7 @@ module Nodes =
             return! db.Set(text)
         }
         
-        override this.ToDbNode = S_TextNode(db.DbLink)
+        override this.ToDbNode = S_TextNode({db = db.DbLink; style = ""})
         override this.Initialize() = task {
             let! text = db.Get
             Option.iter (fun text -> this.Text <- text) text
@@ -244,7 +267,7 @@ module Nodes =
                 ()
         }
         
-        override this.ToDbNode = S_ImageNode(db.DbLink,this.Src.ContentType)
+        override this.ToDbNode = S_ImageNode {db = db.DbLink; content_type=this.Src.ContentType; style=""}
         
         static member Create p link content_type js = ImageNode(p,Link.create js link,content_type,js) |> init
         static member Default p link js = task {return ImageNode(p,Link.create js link,"image/png",js) :> NodeModel}
@@ -252,7 +275,7 @@ module Nodes =
     type DatabaseTestNode(p : Point) =
         inherit HelixNode(p)
     
-        override this.ToDbNode = S_DatabaseTestNode
+        override this.ToDbNode = S_DatabaseTestNode {__placeholder=true}
         override this.Initialize() = Task.CompletedTask
         
         static member Create p = DatabaseTestNode p |> init
@@ -264,7 +287,7 @@ module Nodes =
         
         member val ChildComponent : RenderFragment IEnumerable = [||] with get, set
         
-        override this.ToDbNode = S_CompilationNode
+        override this.ToDbNode = S_CompilationNode {inline_styles=true}
         override this.Initialize() = Task.CompletedTask
         
         static member Create p = CompilationNode p |> init
@@ -334,10 +357,10 @@ module StoreLoad =
             nodes |> Array.map (fun x ->
                 let p = Point x.point
                 match x.node with
-                | S_TextNode s -> TextNode.Create p s js
-                | S_ImageNode (s, content_type) -> ImageNode.Create p s content_type js
-                | S_CompilationNode -> CompilationNode.Create p
-                | S_DatabaseTestNode -> DatabaseTestNode.Create p
+                | S_TextNode s -> TextNode.Create p s.db js
+                | S_ImageNode x -> ImageNode.Create p x.db x.content_type js
+                | S_CompilationNode x -> CompilationNode.Create p
+                | S_DatabaseTestNode x -> DatabaseTestNode.Create p
                 ) |> Task.WhenAll
         let _, d_ports_to = diagram_ids nodes
         let links =
@@ -352,8 +375,8 @@ module StoreLoad =
         nodes
         |> Array.choose (fun n ->
             match n.node with
-            | S_ImageNode (IndexDbLink i, _) | S_TextNode (IndexDbLink i) -> Some i
-            | S_CompilationNode | S_DatabaseTestNode -> None
+            | S_ImageNode {db=IndexDbLink i} | S_TextNode {db=IndexDbLink i} -> Some i
+            | S_CompilationNode _ | S_DatabaseTestNode _ -> None
             )
         |> m.AddInitialLinks
         
@@ -393,13 +416,13 @@ module StoreLoad =
         let nodes, links = store' diagram
         for n in nodes do
             match n.node with
-            | S_ImageNode (IndexDbLink id as x, _) ->
+            | S_ImageNode {db=IndexDbLink id as x} ->
                 let! x = Link.get js x
                 Option.iter (fun x -> images.Add(id,x)) x
-            | S_TextNode (IndexDbLink id as x) ->
+            | S_TextNode {db=IndexDbLink id as x} ->
                 let! x = Link.get js x
                 Option.iter (fun x -> text.Add(id,x)) x
-            | S_CompilationNode | S_DatabaseTestNode -> ()
+            | S_CompilationNode _ | S_DatabaseTestNode _ -> ()
             
         return {
             nodes = nodes

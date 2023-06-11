@@ -3,6 +3,7 @@
 open System
 open System.Collections.Generic
 open System.IO
+open System.IO.Compression
 open System.Net.Http
 open System.Threading.Tasks
 open Blazor.Diagrams.Core
@@ -230,8 +231,7 @@ module Nodes =
                 match! Js.InvokeAsync<obj []>("getImageFromClipboard") with
                 | [|url; content_type|] ->
                     let url, content_type = url.ToString(), content_type.ToString()
-                    let! response = http.GetAsync(url)
-                    let! ar = response.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync()
+                    let! ar = http.GetByteArrayAsync url
                     return Some (HelixBlobUrl(HelixUrlHandle(url,content_type,Js)),ar)
                 | _ -> return None
         }
@@ -244,6 +244,14 @@ module Nodes =
         do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
         
         member val Src : HelixUrl = HelixDirectUrl("images/sun-big.png", "image/png") with get, set
+        
+        member this.GetExtension =
+            match this.Src with
+            | HelixBlobUrl helixUrlHandle -> helixUrlHandle.ContentType
+            | HelixDirectUrl(_, contentType) -> content_type
+            |> fun x -> x.Split('/')[1]
+            
+        member _.GetImage = db.Get
         
         member _.UploadFile js _http (file : IBrowserFile) : Task = task { let! helix_url = upload_file js file in do! node.OnChange helix_url }
         member _.CopyUrlFromClipboard js http : Task = task {
@@ -584,3 +592,119 @@ module Compilation =
             
         dfs start_node
         ordered_nodes.ToArray()
+        
+    module Html =
+        open Giraffe.ViewEngine
+        let img (src : string) = img [Attributes._src src]
+        let p (text : string) = p [] [encodedText text]
+        let master (order : XmlNode []) =
+            html [] [
+                head [] []
+                body [] (Array.toList order)
+            ]
+        
+        let as_text x = RenderView.AsString.htmlDocument x
+        
+    type CompHTMLNodes =
+        | C_Text of text: string
+        | C_Image of src: string
+        
+    type CompDataNodes =
+        | D_Image of src: string * byte [] Task
+        
+    let make_tagger() =
+        let mutable i = 0
+        fun () -> let x = i in i <- i+1; x
+        
+    let image_path' i extension = $"images/%s{i}.%s{extension}"
+    let image_path i (n : ImageNode) = image_path' $"{i:D4}" n.GetExtension
+        
+    let compile_data_nodes (http : HttpClient) (order : NodeModel []) =
+        let i = make_tagger()
+        order |> Array.choose (function
+            | :? ImageNode as n ->
+                D_Image (image_path (i()) n, task {
+                    match! n.GetImage with
+                    | Some x -> return x
+                    | None -> return! http.GetByteArrayAsync n.Src.Url
+                }) |> Some
+            | _ ->
+                None
+            )
+        
+    let compile_html_nodes (order : NodeModel []) =
+        let i = make_tagger()
+        order |> Array.choose (function
+            | :? TextNode as n -> Some (C_Text(n.Text))
+            | :? ImageNode as n -> Some (C_Image (image_path (i()) n))
+            | _ -> None
+            )
+        
+    let compile_html (order : CompHTMLNodes []) (archive : ZipArchive) = task {
+        let result =
+            Array.map (function
+                | C_Text s -> Html.p s
+                | C_Image s -> Html.img s
+                ) order
+            |> Html.master
+            |> Html.as_text
+            
+        let entry = archive.CreateEntry($"index.html")
+        use writer = new StreamWriter(entry.Open())
+        do! writer.WriteAsync(result)
+        }
+        
+    let compile_data (order : CompDataNodes []) (archive : ZipArchive) = task {
+        for i=0 to order.Length-1 do
+            match order[i] with
+            | D_Image(src, data) ->
+                let entry = archive.CreateEntry(src)
+                let! data = data
+                use writer = new BinaryWriter(entry.Open())
+                writer.Write(data)
+        }
+    
+    let use_archive f = task {
+        use stream = new MemoryStream()
+        if true then
+            use archive = new ZipArchive(stream,ZipArchiveMode.Update)
+            do! f archive
+        return stream.ToArray()
+    }
+    
+    let compile_preview_as_zip http (start_node : CompilationNode) = use_archive <| fun archive -> task {
+        let order = compile start_node
+        do! compile_data (compile_data_nodes http order) archive
+        do! compile_html (compile_html_nodes order) archive
+    }
+
+    let compile_raw (start_node : CompilationNode) = use_archive <| fun archive -> task {
+        let order = compile start_node
+        for i=0 to order.Length-1 do
+            match order[i] with
+            | :? TextNode as n ->
+                let entry = archive.CreateEntry($"{i:D4}.body.txt")
+                use writer = new StreamWriter(entry.Open())
+                do! writer.WriteAsync(n.Text)
+            | :? ImageNode as n ->
+                match! n.GetImage with
+                | Some image ->
+                    let entry = archive.CreateEntry($"{i:D4}.%s{n.GetExtension}")
+                    use writer = new BinaryWriter(entry.Open())
+                    writer.Write(image)
+                | None ->
+                    ()
+            | _ ->
+                ()
+    }
+        
+    let download_raw (js : IJSRuntime) (start_node : CompilationNode) = task {
+        let! zip_file_array = compile_raw start_node 
+        do! js.InvokeVoidAsync("downloadFile","diagram_raw.zip",zip_file_array)
+    }
+    
+    let download_preview_as_zip http (js : IJSRuntime) (start_node : CompilationNode) = task {
+        let! zip_file_array = compile_preview_as_zip http start_node
+        do! js.InvokeVoidAsync("downloadFile","diagram_html.zip",zip_file_array)
+    }
+                

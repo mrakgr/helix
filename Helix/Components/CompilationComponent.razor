@@ -2,6 +2,9 @@
 @using Helix.Types
 @using static Helix.Nodes
 
+@inject IJSRuntime Js
+@inject HttpClient Http
+
 <style>
     .custom-node {
         min-width: 300px;
@@ -32,9 +35,9 @@
 <MudCard Class="pa-8 ma-0 darken-1 custom-node d-flex flex-column justify-center"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
-    <MudButton Class="mud-theme-primary" OnClick="OnCompile">
-        Compile
-    </MudButton>
+    <MudButton Class="mud-theme-primary" OnClick="OnPreview">Preview</MudButton>
+    <MudButton Class="mud-theme-primary" OnClick="OnDownloadPreview">Download Preview</MudButton>
+    <MudButton Class="mud-theme-primary" OnClick="OnDownloadRaw">Download Raw</MudButton>
     <br/>
     <MudStack Spacing="0">
         @foreach (var x in Node.ChildComponent)
@@ -69,7 +72,7 @@
                </MudImage>;
     }
 
-    private void OnCompile()
+    private void OnPreview()
     {
         try
         {
@@ -94,6 +97,6 @@
         }
     }
 
-
-
+    private Task OnDownloadRaw() => Compilation.download_raw(Js, Node);
+    private void OnDownloadPreview() => Compilation.download_preview_as_zip(Http, Js, Node);
 }

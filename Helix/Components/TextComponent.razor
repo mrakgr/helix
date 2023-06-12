@@ -15,7 +15,7 @@
         border: 3px solid #29A9E5;
         cursor: pointer;
         visibility: visible;
-        transform: translate(-50%, -100%);
+        transform: translate(-50%, -50%);
     }
     
     .custom-node .port.left {
@@ -28,12 +28,13 @@
         left: 100%;
     }
     
-    .custom-node .port:hover, .custom-node .port.has-links {
-        background-color: black;
+    .custom-node .port.top {
+        top: 0;
+        left: 50%;
     }
     
-    .helix-text-component {
-    
+    .custom-node .port:hover, .custom-node .port.has-links {
+        background-color: black;
     }
 </style>
 

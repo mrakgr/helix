@@ -16,6 +16,11 @@ open Microsoft.AspNetCore.Components.Web
 open Microsoft.JSInterop
 open Thoth.Json.Net
 
+module Tagger =
+    let create() =
+        let mutable i = 0
+        fun () -> let x = i in i <- i+1; x
+
 module LocalForage =
     let get (js : IJSRuntime) (k : string) = js.InvokeAsync<_>("localforage.getItem", k)
     let set (js : IJSRuntime) (k : string) v = js.InvokeVoidAsync("localforage.setItem", k, v)
@@ -108,22 +113,30 @@ module Link =
             }
     
 module Nodes =
-    type HelixPort(parent : NodeModel, alignment, isInput : bool) =
+    type HelixPortType =
+        | Data
+        | Style
+        
+    type HelixPort(parent : NodeModel, alignment, isInput : bool, port_type) =
         inherit PortModel(parent, alignment, null, null)
         
         member val IsInput = isInput with get
+        member val IsData = (match port_type with Data -> true | _ -> false) with get
+        member val PortType = port_type with get
 
         override this.CanAttachTo(port) =
             // This offset is because `this` already has a link by the time this function gets called.
-            let _is_input_port_empty (a : HelixPort) by = a.IsInput && a.Links.Count + by = 0 
+            let is_input_port_empty (a : HelixPort) by = a.IsInput && a.Links.Count + by = 0 
             match port with
             | :? HelixPort as cp ->
                 // Checks for same-node/port attachements.
                 base.CanAttachTo(port)
-                // Makes sure only input - output pairs are valid.
+                // The types need to be the same.
+                && this.PortType = cp.PortType
+                // Makes sure only input <-> output pairs are valid.
                 && this.IsInput <> cp.IsInput
                 // We also need to make sure that an input port only takes a single input.
-                // && (is_input_port_empty this -1 || is_input_port_empty cp 0)
+                && (is_input_port_empty this -1 || is_input_port_empty cp 0)
             | _ -> false
             
     [<AbstractClass>]
@@ -140,8 +153,9 @@ module Nodes =
     type TextNode(p : Point, db : string HelixDbLink) as node =
         inherit HelixNode(p)
         
-        do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
-        do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Style)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
         
         member val Text = "" with get, set
         member this.OnChange (text : string) = task {
@@ -240,8 +254,9 @@ module Nodes =
     type ImageNode(p : Point, db : byte [] HelixDbLink, content_type, js) as node =
         inherit HelixNode(p)
         
-        do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore
-        do node.AddPort(HelixPort(node, PortAlignment.Right, false)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Style)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
         
         member val Src : HelixUrl = HelixDirectUrl("images/sun-big.png", "image/png") with get, set
         
@@ -291,7 +306,7 @@ module Nodes =
     type CompilationNode(p : Point) as node =
         inherit HelixNode(p)
         
-        do node.AddPort(HelixPort(node, PortAlignment.Left, true)) |> ignore // It doesn't have an output port.
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore // It doesn't have an output port.
         
         member val ChildComponent : RenderFragment IEnumerable = [||] with get, set
         
@@ -316,7 +331,8 @@ module StoreLoad =
     
     open MessagePack
     type [<MessagePackObject true>] NodeT = { node : HelixDbNode; point : double * double }
-    type [<MessagePackObject true>] LinkT = { source : int; target : int }
+    type LinkTKey = int * PortAlignment * int
+    type [<MessagePackObject true>] LinkT = { source : LinkTKey; target : LinkTKey }
     
     let local_storage_to js (nodes : NodeT []) (links : LinkT []) = task {
         do! LocalStorage.set js "diagram_nodes" (Encode.Auto.toString nodes)
@@ -336,13 +352,17 @@ module StoreLoad =
         let d_ports_from = Dictionary(HashIdentity.Reference)
         let d_ports_to = Dictionary()
         
-        nodes |> Array.iter (fun x ->
-            x.Ports |> Seq.iter (fun x ->
-                let i = d_ports_from.Count
-                d_ports_from.Add(x,i) // Maps the ports to unique ids.
-                d_ports_to.Add(i,x) // Maps the unique ids to ports
+        nodes |> Array.iteri (fun i x ->
+            x.Ports
+            |> Seq.groupBy (fun x -> x.Alignment)
+            |> Seq.iter (fun (align, ports) ->
+                ports |> Seq.iteri (fun i' port ->
+                    let key = i, align, i' 
+                    d_ports_from.Add(port, key); d_ports_to.Add(key, port)
+                    )
                 )
             )
+            
         d_ports_from, d_ports_to
         
     let to_db_node (n : NodeModel) = {
@@ -612,15 +632,11 @@ module Compilation =
     type CompDataNodes =
         | D_Image of src: string * byte [] Task
         
-    let make_tagger() =
-        let mutable i = 0
-        fun () -> let x = i in i <- i+1; x
-        
     let image_path' i extension = $"images/%s{i}.%s{extension}"
     let image_path i (n : ImageNode) = image_path' $"{i:D4}" n.GetExtension
         
     let compile_data_nodes (http : HttpClient) (order : NodeModel []) =
-        let i = make_tagger()
+        let i = Tagger.create()
         order |> Array.choose (function
             | :? ImageNode as n ->
                 D_Image (image_path (i()) n, task {
@@ -633,7 +649,7 @@ module Compilation =
             )
         
     let compile_html_nodes (order : NodeModel []) =
-        let i = make_tagger()
+        let i = Tagger.create()
         order |> Array.choose (function
             | :? TextNode as n -> Some (C_Text(n.Text))
             | :? ImageNode as n -> Some (C_Image (image_path (i()) n))

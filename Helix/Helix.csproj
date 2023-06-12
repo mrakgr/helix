@@ -17,4 +17,8 @@
     <ItemGroup>
       <ProjectReference Include="..\Helix.Fun\Helix.Fun.fsproj" />
     </ItemGroup>
+
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="wwwroot\sample-data\weather.json" />
+    </ItemGroup>
 </Project>

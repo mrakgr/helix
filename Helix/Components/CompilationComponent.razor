@@ -1,36 +1,8 @@
 ﻿@using Blazor.Diagrams.Components.Renderers;
-@using Helix.Types
 @using static Helix.Nodes
 
 @inject IJSRuntime Js
 @inject HttpClient Http
-
-<style>
-    .custom-node {
-        min-width: 300px;
-    }
-
-    .custom-node .port {
-        position: absolute;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        background-color: #79bcdb;
-        border: 3px solid #29A9E5;
-        cursor: pointer;
-        visibility: visible;
-        transform: translate(-50%, -100%);
-    }
-    
-    .custom-node .port.left {
-        top: 50%;
-        left: 0;
-    }
-    
-    .custom-node .port:hover, .custom-node .port.has-links {
-        background-color: black;
-    }
-</style>
 
 <MudCard Class="pa-8 ma-0 darken-1 custom-node d-flex flex-column justify-center"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
@@ -47,7 +19,7 @@
     </MudStack>
     @foreach (var port in Node.Ports)
     {
-        <PortRenderer Port="port">
+        <PortRenderer Port="port" Class="@Utils.port_styles(port)">
         </PortRenderer>
     }
 </MudCard>
@@ -76,7 +48,7 @@
     {
         try
         {
-            var nodes = Compilation.compile(Node);
+            var nodes = Topological.compilation_node(Node);
             Node.ChildComponent = 
                 nodes.SelectMany(x =>
                 {
@@ -91,7 +63,7 @@
                     return new RenderFragment[] { };
                 });
         }
-        catch (Compilation.CycleException)
+        catch (Topological.CycleException)
         {
             Console.WriteLine("Compilation failed. There is a cycle in the graph.");
         }

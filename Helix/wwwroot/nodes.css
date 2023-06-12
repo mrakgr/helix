@@ -1,0 +1,52 @@
+.custom-node {
+    min-width: 300px;
+}
+
+.custom-node .port {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: #79bcdb;
+    border: 3px solid #29A9E5;
+    cursor: pointer;
+    visibility: visible;
+    transform: translate(-50%, -50%);
+}
+
+.custom-node .port.left {
+    top: 50%;
+    left: 0;
+}
+
+.custom-node .port.right {
+    top: 50%;
+    left: 100%;
+}
+
+.custom-node .port.top {
+    top: 0;
+    left: 50%;
+}
+
+.custom-node .port.bottom {
+    top: 100%;
+    left: 50%;
+}
+
+.custom-node .port:hover, .custom-node .port.has-links {
+    background-color: black;
+}
+
+.custom-node .port.style-port {
+    background-color: #fc8686;
+}
+
+.custom-node .port.style-port:hover, .custom-node .port.style-port.has-links {
+    background-color: #ff0000;
+}
+
+.image-node {
+    width: 600px; 
+    height: 400px;
+}

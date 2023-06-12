@@ -3,43 +3,6 @@
 @inject IJSRuntime Js;
 @inject HttpClient Http;
 
-<style>
-    .custom-node {
-        min-width: 300px;
-    }
-
-    .custom-node .port {
-        position: absolute;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        background-color: #79bcdb;
-        border: 3px solid #29A9E5;
-        cursor: pointer;
-        visibility: visible;
-        transform: translate(-50%, -100%);
-    }
-    
-    .custom-node .port.left {
-        top: 50%;
-        left: 0;
-    }
-    
-    .custom-node .port.right {
-        top: 50%;
-        left: 100%;
-    }
-    
-    .custom-node .port:hover, .custom-node .port.has-links {
-        background-color: black;
-    }
-    
-    .image-node {
-        width: 600px;
-        height: 400px;
-    }
-</style>
-
 <MudCard Class="pa-8 ma-0 custom-node"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
          @oncontextmenu:stopPropagation>
@@ -60,10 +23,11 @@
     </MudStack>
     <br>
     <MudImage ObjectFit="ObjectFit.Contain" Src="@Node.Src.Url" Class="rounded-lg image-node"/>
+    
 
     @foreach (var port in Node.Ports)
     {
-        <PortRenderer Port="port">
+        <PortRenderer Port="port" Class="@Utils.port_styles(port)">
         </PortRenderer>
     }
 </MudCard>

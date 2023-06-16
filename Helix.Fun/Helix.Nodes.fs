@@ -109,7 +109,6 @@ module Link =
 module Nodes =
     type HelixPortType =
         | Data
-        | Style
         
     type HelixPort(parent : NodeModel, alignment, isInput : bool, port_type) =
         inherit PortModel(parent, alignment, null, null)
@@ -162,8 +161,6 @@ module Nodes =
             dfs start_node
             ordered_nodes.ToArray()
             
-        let style start_node = template (fun n -> n.IsInput && match n.PortType with Style -> true | _ -> false) start_node
-        let style_rev start_node = template (fun n -> not n.IsInput && match n.PortType with Style -> true | _ -> false) start_node
         let compilation_node start_node = template (fun n -> n.IsInput) start_node
         
     [<AbstractClass>]

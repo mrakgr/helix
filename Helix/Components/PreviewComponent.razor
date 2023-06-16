@@ -1,0 +1,21 @@
+﻿@using Blazor.Diagrams.Components.Renderers;
+@using static Helix.Nodes
+
+<MudCard Class="pa-8 ma-0 darken-1 custom-node"
+         @onkeydown:stopPropagation @onkeyup:stopPropagation
+         @oncontextmenu:stopPropagation>
+    <MudStack Spacing="0">
+        @Node.Body
+    </MudStack>
+    @foreach (var port in Node.Ports)
+    {
+        <PortRenderer Port="port" Class="@Utils.port_styles(port)">
+        </PortRenderer>
+    }
+</MudCard>
+
+@code {
+    [Parameter]
+    [EditorRequired]
+    public required PreviewNode Node { get; set; }
+}

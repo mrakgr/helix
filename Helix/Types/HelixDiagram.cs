@@ -12,9 +12,10 @@ public class HelixDiagram : HelixDiagramBase
 {
     public HelixDiagram(IJSRuntime js, HttpClient http, Data.MediaPool m) : base(js, http, m, DiagramOptions())
     {
-        RegisterModelComponent<StyleNode, StyleComponent>();
+        RegisterModelComponent<CssNode, CssComponent>();
         RegisterModelComponent<TextNode, TextComponent>();
         RegisterModelComponent<CompilationNode, CompilationComponent>();
+        RegisterModelComponent<PreviewNode, PreviewComponent>();
         RegisterModelComponent<ImageNode, ImageComponent>();
         RegisterModelComponent<DatabaseTestNode, DatabaseTestComponent>();
     }

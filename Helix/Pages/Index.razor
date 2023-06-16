@@ -19,9 +19,10 @@
         </CascadingValue>
     </ActivatorContent>
     <ChildContent>
-        <MudMenuItem OnClick="CreateNode(p => StyleNode.Create(p, MediaPool.GetLink<string>(), Js))">Style</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(p => CssNode.Create(p, MediaPool.GetLink<string>(), Js))">Css</MudMenuItem>
         <MudMenuItem OnClick="CreateNode(p => TextNode.Create(p, MediaPool.GetLink<string>(), Js))">Text</MudMenuItem>
         <MudMenuItem OnClick="CreateNode(p => ImageNode.Default(p, MediaPool.GetLink<byte[]>(), Js))">Image</MudMenuItem>
+        <MudMenuItem OnClick="CreateNode(PreviewNode.Create)">Preview</MudMenuItem>
         <MudMenuItem OnClick="CreateNode(CompilationNode.Create)">Compilation</MudMenuItem>
         <MudMenuItem OnClick="CreateNode(DatabaseTestNode.Create)">Database Test</MudMenuItem>
     </ChildContent>

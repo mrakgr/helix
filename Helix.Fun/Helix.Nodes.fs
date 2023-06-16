@@ -50,11 +50,12 @@ module Data =
     
     [<MessagePack.MessagePackObject>]
     type HelixDbNode =
-     | S_StyleNode of ArgsText
+     | S_CssNode of ArgsText
      | S_TextNode of ArgsText
      | S_ImageNode of ArgsImage
      | S_CompilationNode of ArgsEmpty
      | S_DatabaseTestNode of ArgsEmpty
+     | S_PreviewNode of ArgsEmpty
      
      type HelixDbLink<'t> =
          abstract member DbLink : 't IndexDbLink
@@ -150,18 +151,23 @@ module Nodes =
                         match port with
                         | :? HelixPort as port when cond port ->
                             for link in port.Links do
-                                dfs (if link.TargetNode <> node then link.TargetNode else link.SourceNode)
+                                let target = if link.TargetNode <> node then link.TargetNode else link.SourceNode
+                                if target <> null then dfs target
                         | _ -> ()
                         
                     // Also adding the nodes really needs to be here.
                     // It won't give the correct results if you put it in first place.
                     ordered_nodes.Add node
                     ) node
-                
+
             dfs start_node
             ordered_nodes.ToArray()
             
-        let compilation_node start_node = template (fun n -> n.IsInput) start_node
+        /// Returns the nodes in their topological order from the starting node, going through the input ports.
+        let path_from_input_ports start_node = template (fun n -> n.IsInput) start_node
+        /// Returns the nodes in their topological order from the starting node, going through the output ports.
+        let path_from_output_ports start_node = template (fun n -> not n.IsInput) start_node
+        
         
     [<AbstractClass>]
     type HelixNode(p : Point) =
@@ -169,71 +175,60 @@ module Nodes =
         abstract member ToDbNode : HelixDbNode
         abstract member Initialize :  unit -> Task
         
+    [<AbstractClass>]
+    type HelixPreviewableNode(p : Point) =
+        inherit HelixNode(p)
+        abstract member RefreshPreview : unit -> unit
+        
+    let propagate_changes (n : HelixNode) =
+        for n in Topological.path_from_output_ports n do
+            match n with
+            | :? HelixPreviewableNode as n -> n.RefreshPreview()
+            | _ -> ()
+        
+        
     let init (x : #HelixNode) = task {
         do! x.Initialize()
         return x :> NodeModel
     }
-    
-    type StyleNode(p : Point, db : string HelixDbLink) as node =
+   
+    [<AbstractClass>]
+    type TextNodeBase(p : Point, db : string HelixDbLink) =
         inherit HelixNode(p)
         
-        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Style)) |> ignore
-        do node.AddPort(HelixPort(node, PortAlignment.Bottom, false, Style)) |> ignore
-        
         member val Text = "" with get, set
-        
-        // TODO: Propagate the changes downwards to the stylable nodes.
         member this.OnChange (text : string) = task {
             this.Text <- text
+            propagate_changes this
             return! db.Set(text)
         }
         
-        override this.ToDbNode = S_StyleNode({text = db.DbLink})
         override this.Initialize() = task {
             let! text = db.Get
             Option.iter (fun text -> this.Text <- text) text
         }
         
-        static member Create p link js = StyleNode(p,Link.create js link) |> init
         
-        static member private combine_css (n : string []) =
-            n |> Array.collect (fun x -> x.ReplaceLineEndings().Split(Environment.NewLine))
-            |> Array.map (fun x -> x.Trim())
-            |> fun x -> String.Join("; ", x).Replace(";;",";")
-            
-        static member compile_style_nodes start_node =
-            Topological.style start_node
-            |> Array.choose (function
-                | :? StyleNode as x -> Some x.Text
-                | _ -> None)
-            |> StyleNode.combine_css
-    
-    and [<AbstractClass>] StylableNode(p : Point) =
-        inherit HelixNode(p)
-        
-        member val Style = "" with get,set
-        member this.RefreshStyles() = this.Style <- StyleNode.compile_style_nodes this
-        
-    type TextNode(p : Point, db : string HelixDbLink) as node =
-        inherit StylableNode(p)
+    type TextNode(p, db) as node =
+        inherit TextNodeBase(p,db)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
-        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Style)) |> ignore
         do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
-        
-        member val Text = "" with get, set
-        member this.OnChange (text : string) = task {
-            this.Text <- text
-            return! db.Set(text)
-        }
+        do node.AddPort(HelixPort(node, PortAlignment.Bottom, false, Data)) |> ignore
         
         override this.ToDbNode = S_TextNode({text = db.DbLink})
-        override this.Initialize() = task {
-            let! text = db.Get
-            Option.iter (fun text -> this.Text <- text) text
-        }
         
         static member Create p link js = TextNode(p,Link.create js link) |> init
+        
+    type CssNode(p, db) as node =
+        inherit TextNodeBase(p,db)
+        
+        do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
+        
+        override this.ToDbNode = S_CssNode({text = db.DbLink})
+        
+        static member Create p link js = CssNode(p,Link.create js link) |> init
         
     module Images =
         type HelixUrlHandle(url : string, content_type : string, js : IJSRuntime) =
@@ -316,11 +311,11 @@ module Nodes =
         
     open Images
     type ImageNode(p : Point, db : byte [] HelixDbLink, content_type, js) as node =
-        inherit StylableNode(p)
+        inherit HelixNode(p)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
-        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Style)) |> ignore
         do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
+        do node.AddPort(HelixPort(node, PortAlignment.Bottom, false, Data)) |> ignore
         
         member val Src : HelixUrl = HelixDirectUrl("images/sun-big.png", "image/png") with get, set
         
@@ -342,6 +337,7 @@ module Nodes =
         
         member this.OnChange (x, ar) : Task = task {
             this.Src <- x
+            propagate_changes this
             do! db.Set ar
         }
         
@@ -358,9 +354,30 @@ module Nodes =
         
         static member Create p link content_type js = ImageNode(p,Link.create js link,content_type,js) |> init
         static member Default p link js = task {return ImageNode(p,Link.create js link,"image/png",js) :> NodeModel}
+        
+    // type PreviewT =
+    //     | P_Text of string
+    //     | P_Url of HelixUrl
+    //     | P_None
+        
+    type PreviewNode(p) as node =
+        inherit HelixPreviewableNode(p)
+        
+        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Data)) |> ignore
+        
+        member val Body = MarkupString "<b>qwe</b>" with get,set
+
+        override this.Initialize() = Task.CompletedTask
+        override this.ToDbNode = S_PreviewNode {__placeholder=true}
+        override this.RefreshPreview() = this.Body <- MarkupString (compile this)
             
-    type DatabaseTestNode(p : Point) =
+        static member Create p compile = PreviewNode(p, compile) |> init
+            
+            
+    type DatabaseTestNode(p : Point) as node =
         inherit HelixNode(p)
+        
+        do node.AddPort(HelixPort(node, PortAlignment.Top, true, Data)) |> ignore
     
         override this.ToDbNode = S_DatabaseTestNode {__placeholder=true}
         override this.Initialize() = Task.CompletedTask
@@ -372,7 +389,7 @@ module Nodes =
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore // It doesn't have an output port.
         
-        member val ChildComponent : RenderFragment IEnumerable = [||] with get, set
+        member val Body = MarkupString "<b>qwe</b>" with get,set
         
         override this.ToDbNode = S_CompilationNode {__placeholder=true}
         override this.Initialize() = Task.CompletedTask
@@ -388,12 +405,7 @@ module Utils =
         d.Nodes.Add(node)
     }
     
-    let is_style_port (n : PortModel) =
-        match n with
-        | :? HelixPort as n when n.PortType = Style -> true
-        | _ -> false
-        
-    let port_styles n = if is_style_port n then "style-port" else ""
+    let port_styles (_port : PortModel) = ""
    
 module StoreLoad =
     module LocalStorage =
@@ -456,9 +468,10 @@ module StoreLoad =
             nodes |> Array.map (fun x ->
                 let p = Point x.point
                 match x.node with
-                | S_StyleNode s -> StyleNode.Create p s.text js
+                | S_CssNode s -> CssNode.Create p s.text js
                 | S_TextNode s -> TextNode.Create p s.text js
                 | S_ImageNode x -> ImageNode.Create p x.image x.content_type js
+                | S_PreviewNode {__placeholder=_} -> PreviewNode.Create p
                 | S_CompilationNode {__placeholder=_} -> CompilationNode.Create p
                 | S_DatabaseTestNode {__placeholder=_} -> DatabaseTestNode.Create p
                 ) |> Task.WhenAll
@@ -475,11 +488,13 @@ module StoreLoad =
         nodes
         |> Array.choose (fun n ->
             match n.node with
-            | S_StyleNode {text=IndexDbLink i}
+            | S_CssNode {text=IndexDbLink i}
             | S_TextNode {text=IndexDbLink i} | S_ImageNode {image=IndexDbLink i} -> Some i
-            | S_CompilationNode _ | S_DatabaseTestNode _ -> None
+            | S_CompilationNode _ | S_DatabaseTestNode _ | S_PreviewNode _ -> None
             )
         |> m.AddInitialLinks
+        
+        // TODO: Boot the Previewable nodes here.
         
         m.CleanUp js
         
@@ -517,13 +532,13 @@ module StoreLoad =
         let nodes, links = store' diagram
         for n in nodes do
             match n.node with
-            | S_StyleNode {text=IndexDbLink id as x} | S_TextNode {text=IndexDbLink id as x} ->
+            | S_CssNode {text=IndexDbLink id as x} | S_TextNode {text=IndexDbLink id as x} ->
                 let! x = Link.get js x
                 Option.iter (fun x -> text.Add(id,x)) x
             | S_ImageNode {image=IndexDbLink id as x} ->
                 let! x = Link.get js x
                 Option.iter (fun x -> images.Add(id,x)) x
-            | S_CompilationNode _ | S_DatabaseTestNode _ -> ()
+            | S_CompilationNode _ | S_DatabaseTestNode _ | S_PreviewNode _ -> ()
             
         return {
             nodes = nodes
@@ -659,8 +674,9 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) a
 module Compilation =
     module Html =
         open Giraffe.ViewEngine
-        let img (src : string) = img [Attributes._src src]
-        let p (text : string) = p [] [encodedText text]
+        let css (text : string) = style [] [rawText text] 
+        let img (src : string) = img [_class "helix-image"; _src src]
+        let p (text : string) = p [_class "helix-text"] [encodedText text]
         let master (order : XmlNode []) =
             html [] [
                 head [] []
@@ -670,6 +686,7 @@ module Compilation =
         let as_text x = RenderView.AsString.htmlDocument x
         
     type CompHTMLNodes =
+        | C_Css of text: string
         | C_Text of text: string
         | C_Image of src: string
         
@@ -692,29 +709,32 @@ module Compilation =
                 None
             )
         
-    let compile_html_nodes (order : NodeModel []) =
+    let compile_html_nodes is_download (order : NodeModel []) =
         let i = Tagger.create()
         order |> Array.choose (function
+            | :? CssNode as n -> Some (C_Css(n.Text))
             | :? TextNode as n -> Some (C_Text(n.Text))
-            | :? ImageNode as n -> Some (C_Image (image_path (i()) n))
+            | :? ImageNode as n -> Some (C_Image (if is_download then image_path (i()) n else n.Src.Url))
             | _ -> None
             )
         
-    let compile_html (order : CompHTMLNodes []) (archive : ZipArchive) = task {
-        let result =
-            Array.map (function
-                | C_Text s -> Html.p s
-                | C_Image s -> Html.img s
-                ) order
-            |> Html.master
-            |> Html.as_text
-            
+    let compile_html (order : CompHTMLNodes []) =
+        Array.map (function
+            | C_Css s -> Html.css s
+            | C_Text s -> Html.p s
+            | C_Image s -> Html.img s
+            ) order
+        |> Html.master
+        |> Html.as_text
+        
+    let compile_html_zip (order : CompHTMLNodes []) (archive : ZipArchive) = task {
+        let result = compile_html order
         let entry = archive.CreateEntry($"index.html")
         use writer = new StreamWriter(entry.Open())
         do! writer.WriteAsync(result)
         }
         
-    let compile_data (order : CompDataNodes []) (archive : ZipArchive) = task {
+    let compile_data_zip (order : CompDataNodes []) (archive : ZipArchive) = task {
         for i=0 to order.Length-1 do
             match order[i] with
             | D_Image(src, data) ->
@@ -733,21 +753,38 @@ module Compilation =
     }
     
     let compile_preview_as_zip http (start_node : CompilationNode) = use_archive <| fun archive -> task {
-        let order = Topological.compilation_node start_node
-        do! compile_data (compile_data_nodes http order) archive
-        do! compile_html (compile_html_nodes order) archive
+        let order = Topological.path_from_input_ports start_node
+        do! compile_data_zip (compile_data_nodes http order) archive
+        do! compile_html_zip (compile_html_nodes true order) archive
     }
+    
+    let compilation_preview_last start_node =
+        let css, rest =
+            Topological.path_from_input_ports start_node
+            |> compile_html_nodes false
+            |> Array.partition (function C_Css _ -> true | _ -> false)
+        match Array.tryLast rest with
+        | Some x -> Array.append css [|x|]
+        | None -> css
+        |> compile_html
+    
+    let compilation_preview' start_node =
+        let order = Topological.path_from_input_ports start_node
+        compile_html (compile_html_nodes false order)
+        
+    let compilation_preview (start_node : CompilationNode) =
+        start_node.Body <- MarkupString(compilation_preview' start_node)
 
     let compile_raw (start_node : CompilationNode) = use_archive <| fun archive -> task {
-        let order = Topological.compilation_node start_node
+        let order = Topological.path_from_input_ports start_node
         for i=0 to order.Length-1 do
             match order[i] with
-            | :? StyleNode as n ->
-                let entry = archive.CreateEntry($"{i:D4}.style.txt")
+            | :? CssNode as n ->
+                let entry = archive.CreateEntry($"{i:D4}.css")
                 use writer = new StreamWriter(entry.Open())
                 do! writer.WriteAsync(n.Text)
             | :? TextNode as n ->
-                let entry = archive.CreateEntry($"{i:D4}.body.txt")
+                let entry = archive.CreateEntry($"{i:D4}.txt")
                 use writer = new StreamWriter(entry.Open())
                 do! writer.WriteAsync(n.Text)
             | :? ImageNode as n ->
@@ -761,6 +798,7 @@ module Compilation =
             | _ ->
                 ()
     }
+    
         
     let download_raw (js : IJSRuntime) (start_node : CompilationNode) = task {
         let! zip_file_array = compile_raw start_node 

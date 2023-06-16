@@ -12,10 +12,7 @@
     <MudButton Class="mud-theme-primary" OnClick="OnDownloadRaw">Download Raw</MudButton>
     <br/>
     <MudStack Spacing="0">
-        @foreach (var x in Node.ChildComponent)
-        {
-            @x
-        }
+        @Node.Body
     </MudStack>
     @foreach (var port in Node.Ports)
     {
@@ -30,45 +27,7 @@
     [EditorRequired]
     public required CompilationNode Node { get; set; }
 
-
-    RenderFragment OnCompileText(string text)
-    {
-        return @<MudText Typo="Typo.body1">
-                   @text
-               </MudText>;
-    }
-    
-    private RenderFragment OnCompileImage(string path)
-    {
-        return @<MudImage Src="@path">
-               </MudImage>;
-    }
-
-    private void OnPreview()
-    {
-        try
-        {
-            var nodes = Topological.compilation_node(Node);
-            Node.ChildComponent = 
-                nodes.SelectMany(x =>
-                {
-                    if (x is TextNode textNode)
-                    {
-                        return new[] { OnCompileText(textNode.Text) };
-                    }
-                    if (x is ImageNode imageNode)
-                    {
-                        return new[] { OnCompileImage(imageNode.Src.Url) };
-                    }
-                    return new RenderFragment[] { };
-                });
-        }
-        catch (Topological.CycleException)
-        {
-            Console.WriteLine("Compilation failed. There is a cycle in the graph.");
-        }
-    }
-
+    private void OnPreview() => Compilation.compilation_preview(Node);
     private Task OnDownloadRaw() => Compilation.download_raw(Js, Node);
     private void OnDownloadPreview() => Compilation.download_preview_as_zip(Http, Js, Node);
 }

@@ -10,7 +10,7 @@ namespace Helix.Types;
 
 public class HelixDiagram : HelixDiagramBase
 {
-    public HelixDiagram(IJSRuntime js, HttpClient http, Data.MediaPool m) : base(js, http, m, DiagramOptions())
+    public HelixDiagram(Propagator prop, IJSRuntime js, HttpClient http, Data.MediaPool m) : base(prop, js, http, m, DiagramOptions())
     {
         RegisterModelComponent<CssNode, CssComponent>();
         RegisterModelComponent<TextNode, TextComponent>();

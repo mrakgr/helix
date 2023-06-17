@@ -30,6 +30,11 @@ module LocalForage =
     let keys (js : IJSRuntime) = js.InvokeAsync<string []>("localforage.keys")
    
 module Data =
+    [<AbstractClass>]
+    type HelixPropagator() =
+        abstract member PropagateChanges : NodeModel -> unit
+        abstract member LoadPreviewNodes : NodeModel [] -> unit
+    
     type [<MessagePack.MessagePackObject; Struct>] IndexDbLink<'t> = IndexDbLink of int
     
     [<MessagePack.MessagePackObject true>]
@@ -175,16 +180,6 @@ module Nodes =
         abstract member ToDbNode : HelixDbNode
         abstract member Initialize :  unit -> Task
         
-    [<AbstractClass>]
-    type HelixPreviewableNode(p : Point) =
-        inherit HelixNode(p)
-        abstract member RefreshPreview : unit -> unit
-        
-    let propagate_changes (n : HelixNode) =
-        for n in Topological.path_from_output_ports n do
-            match n with
-            | :? HelixPreviewableNode as n -> n.RefreshPreview()
-            | _ -> ()
         
         
     let init (x : #HelixNode) = task {
@@ -193,13 +188,13 @@ module Nodes =
     }
    
     [<AbstractClass>]
-    type TextNodeBase(p : Point, db : string HelixDbLink) =
+    type TextNodeBase(p : Point, db : string HelixDbLink, prop : HelixPropagator) =
         inherit HelixNode(p)
         
         member val Text = "" with get, set
         member this.OnChange (text : string) = task {
             this.Text <- text
-            propagate_changes this
+            prop.PropagateChanges this
             return! db.Set(text)
         }
         
@@ -209,8 +204,8 @@ module Nodes =
         }
         
         
-    type TextNode(p, db) as node =
-        inherit TextNodeBase(p,db)
+    type TextNode(p, db, prop) as node =
+        inherit TextNodeBase(p,db,prop)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
         do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
@@ -218,17 +213,17 @@ module Nodes =
         
         override this.ToDbNode = S_TextNode({text = db.DbLink})
         
-        static member Create p link js = TextNode(p,Link.create js link) |> init
+        static member Create p link prop js = TextNode(p,Link.create js link,prop) |> init
         
-    type CssNode(p, db) as node =
-        inherit TextNodeBase(p,db)
+    type CssNode(p, db, prop) as node =
+        inherit TextNodeBase(p,db,prop)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
         do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
         
         override this.ToDbNode = S_CssNode({text = db.DbLink})
         
-        static member Create p link js = CssNode(p,Link.create js link) |> init
+        static member Create p link prop js = CssNode(p,Link.create js link,prop) |> init
         
     module Images =
         type HelixUrlHandle(url : string, content_type : string, js : IJSRuntime) =
@@ -310,7 +305,7 @@ module Nodes =
         }
         
     open Images
-    type ImageNode(p : Point, db : byte [] HelixDbLink, content_type, js) as node =
+    type ImageNode(p : Point, db : byte [] HelixDbLink, content_type, js,prop : HelixPropagator) as node =
         inherit HelixNode(p)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
@@ -337,7 +332,7 @@ module Nodes =
         
         member this.OnChange (x, ar) : Task = task {
             this.Src <- x
-            propagate_changes this
+            prop.PropagateChanges this
             do! db.Set ar
         }
         
@@ -352,16 +347,11 @@ module Nodes =
         
         override this.ToDbNode = S_ImageNode {image = db.DbLink; content_type=this.Src.ContentType}
         
-        static member Create p link content_type js = ImageNode(p,Link.create js link,content_type,js) |> init
-        static member Default p link js = task {return ImageNode(p,Link.create js link,"image/png",js) :> NodeModel}
-        
-    // type PreviewT =
-    //     | P_Text of string
-    //     | P_Url of HelixUrl
-    //     | P_None
+        static member Create p link content_type prop js = ImageNode(p,Link.create js link,content_type,js,prop) |> init
+        static member Default p link prop js = task {return ImageNode(p,Link.create js link,"image/png",js,prop) :> NodeModel}
         
     type PreviewNode(p) as node =
-        inherit HelixPreviewableNode(p)
+        inherit HelixNode(p)
         
         do node.AddPort(HelixPort(node, PortAlignment.Top, true, Data)) |> ignore
         
@@ -369,9 +359,8 @@ module Nodes =
 
         override this.Initialize() = Task.CompletedTask
         override this.ToDbNode = S_PreviewNode {__placeholder=true}
-        override this.RefreshPreview() = this.Body <- MarkupString (compile this)
             
-        static member Create p compile = PreviewNode(p, compile) |> init
+        static member Create p = PreviewNode(p) |> init
             
             
     type DatabaseTestNode(p : Point) as node =
@@ -463,14 +452,14 @@ module StoreLoad =
     
     let store' (diagram : Diagram) : NodeT [] * LinkT [] = store_nodes_links (Seq.toArray diagram.Nodes) (Seq.toArray diagram.Links)
     
-    let load_nodes_links js (nodes : NodeT []) (links : LinkT []) = task {
+    let load_nodes_links prop js (nodes : NodeT []) (links : LinkT []) = task {
         let! nodes =
             nodes |> Array.map (fun x ->
                 let p = Point x.point
                 match x.node with
-                | S_CssNode s -> CssNode.Create p s.text js
-                | S_TextNode s -> TextNode.Create p s.text js
-                | S_ImageNode x -> ImageNode.Create p x.image x.content_type js
+                | S_CssNode s -> CssNode.Create p s.text prop js
+                | S_TextNode s -> TextNode.Create p s.text prop js
+                | S_ImageNode x -> ImageNode.Create p x.image x.content_type prop js
                 | S_PreviewNode {__placeholder=_} -> PreviewNode.Create p
                 | S_CompilationNode {__placeholder=_} -> CompilationNode.Create p
                 | S_DatabaseTestNode {__placeholder=_} -> DatabaseTestNode.Create p
@@ -494,22 +483,21 @@ module StoreLoad =
             )
         |> m.AddInitialLinks
         
-        // TODO: Boot the Previewable nodes here.
-        
         m.CleanUp js
         
-    let load' (d : Diagram) (js : IJSRuntime) (m : MediaPool) nodes links = task {
+    let load' prop (d : Diagram) (js : IJSRuntime) (m : MediaPool) nodes links = task {
         d.Nodes.Clear(); d.Links.Clear()
         
         do! media_pool_initialize js m nodes
-        let! nodes, links = load_nodes_links js nodes links
+        let! nodes, links = load_nodes_links prop js nodes links
                     
         d.Nodes.Add nodes; d.Links.Add links
+        prop.LoadPreviewNodes nodes
     }
     
-    let load_on_visibility_change (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
+    let load_on_visibility_change prop (d : Diagram) (js : IJSRuntime) (m : MediaPool) = task {
         let! nodes, links = local_storage_from js
-        do! load' d js m nodes links
+        do! load' prop d js m nodes links
     }
         
     let store_on_visibility_change (diagram : Diagram) js _http = task {
@@ -548,13 +536,13 @@ module StoreLoad =
         }
     }
     
-    let load_mp js (m : MediaPool) diagram (n : HelixDiagramFile) = task {
+    let load_mp prop js (m : MediaPool) diagram (n : HelixDiagramFile) = task {
         for id,ar in n.images do
             do! LocalForage.set js (id_to_key id) ar
         for id,ar in n.text do
             do! LocalForage.set js (id_to_key id) ar
             
-        do! load' diagram js m n.nodes n.links
+        do! load' prop diagram js m n.nodes n.links
     }
     
     module private MessagePackUtils =
@@ -570,9 +558,9 @@ module StoreLoad =
         do! js.InvokeVoidAsync("downloadFile","diagram.helixdb", serialize mp)
     }
     
-    let database_upload js m diagram (file : IBrowserFile) = task {
+    let database_upload prop js m diagram (file : IBrowserFile) = task {
         let! ar = Images.stream_to_byte_array (file.OpenReadStream(file.Size) )
-        do! ar |> deserialize |> load_mp js m diagram
+        do! ar |> deserialize |> load_mp prop js m diagram
     }
 
 type UndoBufferActions =
@@ -583,7 +571,7 @@ type UndoBufferActions =
     | U_NodesMoved of start: Dictionary<NodeModel,Point> * ``end``: Dictionary<NodeModel,Point>
         
 open FSharp.Control.Reactive
-type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) as this =
+type HelixDiagramBase(prop, js : IJSRuntime, http : HttpClient, m : MediaPool, opts) as this =
     inherit Diagram(opts)
     
     let redo = Stack()
@@ -660,7 +648,7 @@ type HelixDiagramBase(js : IJSRuntime, http : HttpClient, m : MediaPool, opts) a
             do! js.InvokeVoidAsync("registerUnloadEvent", DotNetObjectReference.Create(this));            
             is_loaded <- true
 
-        do! StoreLoad.load_on_visibility_change this js m
+        do! StoreLoad.load_on_visibility_change prop this js m
     }
     
     member this.OnStore() = task {
@@ -809,4 +797,22 @@ module Compilation =
         let! zip_file_array = compile_preview_as_zip http start_node
         do! js.InvokeVoidAsync("downloadFile","diagram_html.zip",zip_file_array)
     }
-                
+    
+type Propagator() =
+    inherit HelixPropagator()
+    
+    let update (n : NodeModel) = 
+         match n with
+         | :? PreviewNode as n ->
+             n.Body <- MarkupString (Compilation.compilation_preview_last n)
+             n.RefreshAll()
+         | :? CompilationNode as n ->
+             n.Body <- MarkupString (Compilation.compilation_preview' n)
+             n.RefreshAll()
+         | _ -> ()
+    
+    override this.PropagateChanges n =
+         for n in Topological.path_from_output_ports n do update n
+
+    override this.LoadPreviewNodes nodes =
+        for n in nodes do update n

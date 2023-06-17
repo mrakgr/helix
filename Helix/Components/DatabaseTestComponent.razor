@@ -3,6 +3,7 @@
 @inject HelixDiagram Diagram
 @inject IJSRuntime Js
 @inject Data.MediaPool MediaPool
+@inject Propagator Prop
 
 <MudCard Class="pa-8"
          @onkeydown:stopPropagation @onkeyup:stopPropagation
@@ -41,7 +42,7 @@
         GC.Collect();
     }
 
-    private Task OnDownloadDiagram() => StoreLoad.on_database_download(Js,Diagram);
-    private Task OnUploadDiagram(IBrowserFile file) => StoreLoad.database_upload(Js, MediaPool, Diagram, file);
+    private Task OnDownloadDiagram() => StoreLoad.on_database_download(Js, Diagram);
+    private Task OnUploadDiagram(IBrowserFile file) => StoreLoad.database_upload(Prop, Js, MediaPool, Diagram, file);
 
 }

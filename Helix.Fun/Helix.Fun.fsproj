@@ -6,11 +6,13 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Include="Helix.Lang.fs" />
         <Compile Include="Helix.Nodes.fs" />
         <None Include="script.fsx" />
     </ItemGroup>
 
     <ItemGroup>
+      <PackageReference Include="FParsec" Version="1.1.1" />
       <PackageReference Include="FSharp.Control.Reactive" Version="5.0.5" />
       <PackageReference Include="Giraffe.ViewEngine" Version="1.4.0" />
       <PackageReference Include="MessagePack.FSharpExtensions" Version="4.0.0" />

@@ -188,10 +188,10 @@ module Nodes =
     }
    
     [<AbstractClass>]
-    type TextNodeBase(p : Point, db : string HelixDbLink, prop : HelixPropagator) =
+    type TextNodeBase(p : Point, def, db : string HelixDbLink, prop : HelixPropagator) =
         inherit HelixNode(p)
         
-        member val Text = "" with get, set
+        member val Text = def with get, set
         member this.OnChange (text : string) = task {
             this.Text <- text
             prop.PropagateChanges this
@@ -205,7 +205,7 @@ module Nodes =
         
         
     type TextNode(p, db, prop) as node =
-        inherit TextNodeBase(p,db,prop)
+        inherit TextNodeBase(p,"",db,prop)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
         do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
@@ -215,8 +215,12 @@ module Nodes =
         
         static member Create p link prop js = TextNode(p,Link.create js link,prop) |> init
         
+    let private css_default = """.helix-text {
+    white-space: pre;
+}"""
+        
     type CssNode(p, db, prop) as node =
-        inherit TextNodeBase(p,db,prop)
+        inherit TextNodeBase(p,css_default,db,prop)
         
         do node.AddPort(HelixPort(node, PortAlignment.Left, true, Data)) |> ignore
         do node.AddPort(HelixPort(node, PortAlignment.Right, false, Data)) |> ignore
@@ -714,6 +718,7 @@ module Compilation =
             ) order
         |> Html.master
         |> Html.as_text
+        |> Lang.run
         
     let compile_html_zip (order : CompHTMLNodes []) (archive : ZipArchive) = task {
         let result = compile_html order
